@@ -1,5 +1,5 @@
 import threading
-import tkinter as tk
+import customtkinter as ctk
 from tkinter.scrolledtext import ScrolledText
 from ui.dialogs import seleccionar_video, mostrar_info, mostrar_error
 from core.extractor import extraer_audio
@@ -7,14 +7,21 @@ from core.transcriber import transcribir
 from core.utils import limpiar_temp, asegurar_dir, nombre_salida_por_video, dividir_audio_ffmpeg
 
 def iniciar_app():
+    # Configuración global
+    ctk.set_appearance_mode("dark")   # "light" | "dark" | "system"
+    ctk.set_default_color_theme("blue")
+
     def log(msg):
         txt_logs.config(state="normal")
-        txt_logs.insert(tk.END, msg + "\n")
-        txt_logs.see(tk.END)
+        txt_logs.insert("end", msg + "\n")
+        txt_logs.see("end")
         txt_logs.config(state="disabled")
 
     def deshabilitar_ui(flag=True):
-        btn_seleccionar.config(state=tk.DISABLED if flag else tk.NORMAL)
+        if flag:
+            btn_seleccionar.configure(state="disabled")
+        else:
+            btn_seleccionar.configure(state="normal")
 
     def procesar_en_thread(video_path):
         try:
@@ -63,23 +70,51 @@ def iniciar_app():
             return
         deshabilitar_ui(True)
         txt_logs.config(state="normal")
-        txt_logs.delete("1.0", tk.END)
+        txt_logs.delete("1.0", "end")
         txt_logs.config(state="disabled")
         hilo = threading.Thread(target=procesar_en_thread, args=(video,), daemon=True)
         hilo.start()
 
-    # UI
-    ventana = tk.Tk()
-    ventana.title("Transcriptor de Video")
-    ventana.geometry("560x360")
+    def cambiar_tema():
+        modo = ctk.get_appearance_mode()
+        if modo == "Dark":
+            ctk.set_appearance_mode("light")
+        else:
+            ctk.set_appearance_mode("dark")
 
-    lbl = tk.Label(ventana, text="Selecciona un video para transcribir a texto", pady=8, font=("Segoe UI", 11))
-    lbl.pack()
+    # Ventana principal
+    ventana = ctk.CTk()
+    ventana.title("🎬 Transcriptor de Video a Texto")
+    ventana.geometry("650x450")
 
-    btn_seleccionar = tk.Button(ventana, text="Seleccionar Video", command=on_click, height=2, width=24)
-    btn_seleccionar.pack(pady=6)
+    frame = ctk.CTkFrame(master=ventana, corner_radius=15)
+    frame.pack(pady=20, padx=20, fill="both", expand=True)
 
-    txt_logs = ScrolledText(ventana, wrap="word", height=14, state="disabled")
-    txt_logs.pack(fill="both", expand=True, padx=10, pady=8)
+    lbl = ctk.CTkLabel(
+        master=frame,
+        text="Selecciona un video para transcribir a texto",
+        font=("Segoe UI", 16, "bold")
+    )
+    lbl.pack(pady=10)
+
+    btn_seleccionar = ctk.CTkButton(
+        master=frame,
+        text="📂 Seleccionar Video",
+        command=on_click,
+        height=40,
+        width=220,
+        font=("Segoe UI", 14, "bold"),
+        fg_color="#4CAF50",
+        hover_color="#45a049"
+    )
+    btn_seleccionar.pack(pady=10)
+
+    # Área de logs con ScrolledText (seguimos usando Tk, se integra bien con CTk)
+    txt_logs = ScrolledText(frame, wrap="word", height=14, state="disabled", font=("Consolas", 10))
+    txt_logs.pack(fill="both", expand=True, padx=10, pady=10)
+
+    # Switch modo claro/oscuro
+    switch = ctk.CTkSwitch(master=frame, text="🌙/☀️ Modo oscuro", command=cambiar_tema)
+    switch.pack(pady=5)
 
     ventana.mainloop()
