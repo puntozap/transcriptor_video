@@ -25,7 +25,7 @@ Incluye una **interfaz gráfica de escritorio** construida con **Tkinter**.
 
 ### 1. Clonar o copiar el proyecto
 ```powershell
-git clone https://github.com/tuusuario/transcriptor_video.git
+git clone https://github.com/puntozap/transcriptor_video.git
 cd transcriptor_video
 ```
 > También puedes copiar manualmente la carpeta `transcriptor_video` en tu PC.
