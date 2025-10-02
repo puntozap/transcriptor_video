@@ -1,10 +1,11 @@
-
+```text
 ███████╗ █████╗ ██████╗  █████╗ ████████╗ █████╗ 
 ╚══███╔╝██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗
   ███╔╝ ███████║██████╔╝███████║   ██║   ███████║
  ███╔╝  ██╔══██║██╔═══╝ ██╔══██║   ██║   ██╔══██║
 ███████╗██║  ██║██║     ██║  ██║   ██║   ██║  ██║
 ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
+```
 
 # 🎬 Transcriptor de Video a Texto  
 
@@ -33,7 +34,7 @@ Incluye una **interfaz gráfica de escritorio** construida con **Tkinter**.
 
 ### 1. Clonar o copiar el proyecto
 ```powershell
-git clone https://github.com/puntozap/transcriptor_video.git
+git clone https://github.com/tuusuario/transcriptor_video.git
 cd transcriptor_video
 ```
 > También puedes copiar manualmente la carpeta `transcriptor_video` en tu PC.
@@ -44,7 +45,7 @@ python -m venv venv
 ```
 Activar el entorno:
 ```powershell
-.venv\Scripts\Activate
+.env\Scriptsctivate
 ```
 (Verás `(venv)` al inicio de la terminal cuando esté activo).  
 
@@ -128,7 +129,7 @@ Crea un archivo `iniciar.bat` en la raíz del proyecto con:
 ```bat
 @echo off
 cd /d %~dp0
-call venv\Scripts\activate.bat
+call venv\Scriptsctivate.bat
 python app.py
 pause
 ```
