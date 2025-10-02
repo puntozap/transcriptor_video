@@ -36,7 +36,7 @@ python -m venv venv
 ```
 Activar el entorno:
 ```powershell
-.env\Scriptsctivate
+.venv\Scripts\Activate
 ```
 (Verás `(venv)` al inicio de la terminal cuando esté activo).  
 
@@ -120,7 +120,7 @@ Crea un archivo `iniciar.bat` en la raíz del proyecto con:
 ```bat
 @echo off
 cd /d %~dp0
-call venv\Scriptsctivate.bat
+call venv\Scripts\activate.bat
 python app.py
 pause
 ```
