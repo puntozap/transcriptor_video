@@ -172,6 +172,46 @@ def obtener_fps(path: str) -> float:
         return 30.0
 
 
+def concat_videos_ffmpeg(video_paths: list[str], output_path: str, log_fn=None) -> str:
+    if not video_paths:
+        raise ValueError("No hay videos para concatenar.")
+    if len(video_paths) == 1:
+        os.replace(video_paths[0], output_path)
+        return output_path
+    list_path = os.path.join(tempfile.gettempdir(), f"concat_{uuid.uuid4().hex}.txt")
+    try:
+        with open(list_path, "w", encoding="utf-8") as fh:
+            for src in video_paths:
+                safe = os.path.abspath(src).replace("'", "'\\''")
+                fh.write(f"file '{safe}'\n")
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            list_path,
+            "-c",
+            "copy",
+            output_path,
+        ]
+        if log_fn:
+            log_fn(f"🔗 Concatenando {len(video_paths)} partes...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            err = (result.stderr or "").strip()
+            raise RuntimeError(f"Concatenación falló: {err[-500:]}")
+        return output_path
+    finally:
+        try:
+            if os.path.exists(list_path):
+                os.remove(list_path)
+        except Exception:
+            pass
+
+
 def _pil_color(value: str, fallback: str) -> str:
     val = (value or "").strip()
     if not val:

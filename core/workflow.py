@@ -24,6 +24,7 @@ from core.utils import (
     overlay_visualizador,
     overlay_image_temporizada,
     aplicar_musica_fondo,
+    concat_videos_ffmpeg,
 )
 from core.transcriber import transcribir_srt
 import re
@@ -178,12 +179,17 @@ def procesar_video(
                     except Exception:
                         fondo_target = None
                 inset = fondo_inset_pct
-                for parte in partes_video:
+                fondos_generados = []
+                total_partes_bg = len(partes_video)
+                for idx_bg, parte in enumerate(partes_video, start=1):
                     if stop_control.should_stop():
                         if logs: logs("Proceso detenido por el usuario.")
                         return
                     nombre = os.path.splitext(os.path.basename(parte))[0]
                     out_path = os.path.join(fondo_dir, f"{nombre}_bg.mp4")
+                    if logs:
+                        pct = int(round((idx_bg / max(1, total_partes_bg)) * 100))
+                        logs(f"🧩 Aplicando fondo {idx_bg}/{total_partes_bg} ({pct}%): {os.path.basename(parte)}")
                     aplicar_fondo_imagen(
                         parte,
                         out_path,
@@ -199,6 +205,23 @@ def procesar_video(
                         bg_crop_bottom=fondo_bg_crop_bottom,
                         log_fn=logs if logs else None
                     )
+                    fondos_generados.append(out_path)
+
+                if len(fondos_generados) > 1:
+                    final_out = os.path.join(fondo_dir, f"{base_name}_bg_full.mp4")
+                    if logs:
+                        logs(f"🔗 Uniendo {len(fondos_generados)} partes...")
+                    concat_videos_ffmpeg(fondos_generados, final_out, log_fn=logs if logs else None)
+                    if logs:
+                        logs("✅ Unión completada (100%).")
+                    for fp in fondos_generados:
+                        try:
+                            os.remove(fp)
+                        except Exception:
+                            pass
+                    output_videos = [final_out]
+                elif len(fondos_generados) == 1:
+                    output_videos = [fondos_generados[0]]
 
             if vertical_tiktok and partes_video:
                 for idx, parte in enumerate(partes_video):
