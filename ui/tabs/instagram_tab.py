@@ -190,6 +190,7 @@ def _setup_config_tab(parent, context):
 
 def _setup_upload_tab(parent, context):
     log = context.get("log", print)
+    config = _load_config()
     
     ctk.CTkLabel(parent, text="Publicar Reel", font=("Arial", 16, "bold")).pack(pady=15)
 
@@ -283,10 +284,37 @@ def _setup_upload_tab(parent, context):
     chk_feed.pack(anchor="w", padx=20, pady=5)
     chk_feed.select()
 
+    chunk_row = ctk.CTkFrame(parent, fg_color="transparent")
+    chunk_row.pack(fill="x", padx=20, pady=(6, 0))
+    ctk.CTkLabel(chunk_row, text="Chunk size (MB, opcional):", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_chunk = ctk.CTkEntry(chunk_row, width=80, placeholder_text="Ej: 4")
+    entry_chunk.pack(side="left", padx=(8, 0))
+    if config.get("ig_chunk_size_mb"):
+        entry_chunk.insert(0, str(config.get("ig_chunk_size_mb")))
+
+    def _get_chunk_size_mb():
+        raw = entry_chunk.get().strip()
+        if not raw:
+            return None
+        try:
+            value = int(raw)
+        except Exception:
+            return None
+        return max(1, value)
+
+    def _persist_chunk_size(chunk_size_mb):
+        if chunk_size_mb is None:
+            return
+        data = _load_config()
+        data["ig_chunk_size_mb"] = chunk_size_mb
+        _save_config(data)
+
     def process_upload():
         video_path = entry_file.get().strip()
         caption = txt_caption.get("1.0", "end").strip()
         share_feed = bool(chk_feed.get())
+        chunk_size_mb = _get_chunk_size_mb()
+        _persist_chunk_size(chunk_size_mb)
         config = _load_config()
 
         if not video_path or not os.path.exists(video_path):
@@ -312,13 +340,21 @@ def _setup_upload_tab(parent, context):
                 token_expires_at=config.get("token_expires_at"),
                 on_token_update=_update_tokens,
             )
-            uploader.upload_reel_resumable(video_path, caption, share_feed, log_fn=log)
+            uploader.upload_reel_resumable(
+                video_path,
+                caption,
+                share_feed,
+                log_fn=log,
+                chunk_size_mb=chunk_size_mb,
+            )
         
         threading.Thread(target=_run, daemon=True).start()
 
     def process_batch():
         config = _load_config()
         share_feed = bool(chk_feed.get())
+        chunk_size_mb = _get_chunk_size_mb()
+        _persist_chunk_size(chunk_size_mb)
         if not config.get("account_id") or not config.get("access_token"):
             log("❌ Faltan credenciales en la pestaña Configuración.")
             return
@@ -360,7 +396,13 @@ def _setup_upload_tab(parent, context):
                     log(f"❌ [{idx}/{total}] Error IA: {e}")
                     continue
                 log(f"[{idx}/{total}] Subiendo a Instagram...")
-                uploader.upload_reel_resumable(path, caption, share_feed, log_fn=log)
+                uploader.upload_reel_resumable(
+                    path,
+                    caption,
+                    share_feed,
+                    log_fn=log,
+                    chunk_size_mb=chunk_size_mb,
+                )
             log("✅ Lote finalizado.")
 
         threading.Thread(target=_run, daemon=True).start()

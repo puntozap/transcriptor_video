@@ -1,11 +1,11 @@
 DEFAULT_CORTE_CONFIG = {
     "recorte_manual_top": 0.25,
     "recorte_manual_bottom": 0.25,
-    "inset_left_pct": 7.0,
+    "inset_left_pct": 0.0,
     "inset_right_pct": 4.0,
     "inset_top_pct": 22.0,
     "inset_bottom_pct": 8.0,
-    "zoom": 1.0,
+    "zoom": 1.05,
     "bg_crop_top_pct": 0.0,
     "bg_crop_bottom_pct": 0.0,
 }
@@ -13,7 +13,7 @@ DEFAULT_CORTE_CONFIG = {
 DEFAULT_CINTAS_CONFIG = [
     {
         "lado": "izquierda",
-        "left_pct": 7.0,
+        "left_pct": 0.0,
         "top_pct": 73.0,
         "width_pct": 42.0,
         "height_pct": 10.0,
@@ -27,7 +27,7 @@ DEFAULT_CINTAS_CONFIG = [
     },
     {
         "lado": "derecha",
-        "left_pct": 51.5,
+        "left_pct": 50.5,
         "top_pct": 73.0,
         "width_pct": 42.0,
         "height_pct": 10.0,
@@ -36,8 +36,8 @@ DEFAULT_CINTAS_CONFIG = [
         "text_color": "#FFFFFF",
         "fontfile_name": "C:\\Windows\\Fonts\\arialbd.ttf",
         "fontfile_role": "C:\\Windows\\Fonts\\arial.ttf",
-        "nombre": "Host",
-        "rol": "Rol / Profesión",
+        "nombre": "Roberto Ramírez Basterrechea",
+        "rol": "Host",
     },
 ]
 
