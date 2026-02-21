@@ -17,6 +17,7 @@ from core.utils import (
     guardar_resumen_rango,
     generar_vertical_tiktok,
     aplicar_fondo_imagen,
+    aplicar_fondo_video,
     obtener_duracion_segundos,
     obtener_tamano_video,
     asegurar_dir,
@@ -25,6 +26,9 @@ from core.utils import (
     overlay_image_temporizada,
     aplicar_musica_fondo,
     concat_videos_ffmpeg,
+    concat_videos_reencode,
+    aplicar_corte_zoom_fondo_video,
+    aplicar_encuadre_base,
 )
 from core.transcriber import transcribir_srt
 import re
@@ -48,6 +52,9 @@ def procesar_video(
     recorte_manual_bottom: float = 0.0,
     generar_srt: bool = True,
     fondo_path: str | None = None,
+    fondo_video_path: str | None = None,
+    fondo_video_speed: float = 1.0,
+    intro_path: str | None = None,
     fondo_estilo: str = "fill",
     fondo_escala: float = 0.92,
     fondo_usar_tamano_imagen: bool = False,
@@ -78,6 +85,7 @@ def procesar_video(
     musica_inicio: float = 0.0,
     musica_fin: float | None = None,
     musica_inicio_video: float = 0.0,
+
 ):
     """
     Procesa un archivo (video o audio):
@@ -169,13 +177,23 @@ def procesar_video(
                 if logs: logs(f"Video dividido en {len(partes_video)} fragmentos")
                 output_videos = partes_video
 
-            if fondo_path and os.path.exists(fondo_path) and partes_video:
+            bg_video_path = fondo_video_path if fondo_video_path and os.path.exists(fondo_video_path) else None
+            try:
+                bg_video_speed = float(fondo_video_speed)
+            except Exception:
+                bg_video_speed = 1.0
+            bg_video_speed = max(0.25, min(bg_video_speed, 2.0))
+            bg_image_path = fondo_path if fondo_path and os.path.exists(fondo_path) else None
+            if (bg_video_path or bg_image_path) and partes_video:
                 fondo_dir = os.path.join(os.path.dirname(partes_video[0]), "background")
                 os.makedirs(fondo_dir, exist_ok=True)
                 fondo_target = None
                 if fondo_usar_tamano_imagen:
                     try:
-                        fondo_target = obtener_tamano_video(fondo_path)
+                        if bg_video_path:
+                            fondo_target = obtener_tamano_video(bg_video_path)
+                        elif bg_image_path:
+                            fondo_target = obtener_tamano_video(bg_image_path)
                     except Exception:
                         fondo_target = None
                 inset = fondo_inset_pct
@@ -190,21 +208,39 @@ def procesar_video(
                     if logs:
                         pct = int(round((idx_bg / max(1, total_partes_bg)) * 100))
                         logs(f"🧩 Aplicando fondo {idx_bg}/{total_partes_bg} ({pct}%): {os.path.basename(parte)}")
-                    aplicar_fondo_imagen(
-                        parte,
-                        out_path,
-                        fondo_path,
-                        estilo=fondo_estilo,
-                        target_size=fondo_target,
-                        fg_scale=fondo_escala,
-                        inset_pct=inset,
-                        fg_zoom=fondo_zoom,
-                        cintas=fondo_cintas,
-                        mensajes=fondo_mensajes,
-                        bg_crop_top=fondo_bg_crop_top,
-                        bg_crop_bottom=fondo_bg_crop_bottom,
-                        log_fn=logs if logs else None
-                    )
+                    if bg_video_path:
+                        aplicar_fondo_video(
+                            parte,
+                            out_path,
+                            bg_video_path,
+                            estilo=fondo_estilo,
+                            target_size=fondo_target,
+                            fg_scale=fondo_escala,
+                            inset_pct=inset,
+                            fg_zoom=fondo_zoom,
+                            cintas=fondo_cintas,
+                            mensajes=fondo_mensajes,
+                            bg_crop_top=fondo_bg_crop_top,
+                            bg_crop_bottom=fondo_bg_crop_bottom,
+                            bg_speed=bg_video_speed,
+                            log_fn=logs if logs else None
+                        )
+                    else:
+                        aplicar_fondo_imagen(
+                            parte,
+                            out_path,
+                            bg_image_path,
+                            estilo=fondo_estilo,
+                            target_size=fondo_target,
+                            fg_scale=fondo_escala,
+                            inset_pct=inset,
+                            fg_zoom=fondo_zoom,
+                            cintas=fondo_cintas,
+                            mensajes=fondo_mensajes,
+                            bg_crop_top=fondo_bg_crop_top,
+                            bg_crop_bottom=fondo_bg_crop_bottom,
+                            log_fn=logs if logs else None
+                        )
                     fondos_generados.append(out_path)
 
                 if len(fondos_generados) > 1:
@@ -249,13 +285,16 @@ def procesar_video(
                             os.remove(parte)
                         except Exception:
                             pass
-                if fondo_path and os.path.exists(fondo_path):
+                if bg_video_path or bg_image_path:
                     vertical_bg_dir = os.path.join(os.path.dirname(partes_video[0]), "background")
                     os.makedirs(vertical_bg_dir, exist_ok=True)
                     fondo_target = None
                     if fondo_usar_tamano_imagen:
                         try:
-                            fondo_target = obtener_tamano_video(fondo_path)
+                            if bg_video_path:
+                                fondo_target = obtener_tamano_video(bg_video_path)
+                            elif bg_image_path:
+                                fondo_target = obtener_tamano_video(bg_image_path)
                         except Exception:
                             fondo_target = None
                     inset = fondo_inset_pct
@@ -268,21 +307,39 @@ def procesar_video(
                             nombre = nombre[:-4]
                         in_path = os.path.join(os.path.dirname(parte), f"{nombre}_vertical.mp4")
                         out_path = os.path.join(vertical_bg_dir, f"{nombre}_vertical_bg.mp4")
-                        aplicar_fondo_imagen(
-                            in_path,
-                            out_path,
-                            fondo_path,
-                            estilo=fondo_estilo,
-                            target_size=fondo_target or (1080, 1920),
-                            fg_scale=fondo_escala,
-                            inset_pct=inset,
-                            fg_zoom=fondo_zoom,
-                            cintas=fondo_cintas,
-                            mensajes=fondo_mensajes,
-                            bg_crop_top=fondo_bg_crop_top,
-                            bg_crop_bottom=fondo_bg_crop_bottom,
-                            log_fn=logs if logs else None
-                        )
+                        if bg_video_path:
+                            aplicar_fondo_video(
+                                in_path,
+                                out_path,
+                                bg_video_path,
+                                estilo=fondo_estilo,
+                                target_size=fondo_target or (1080, 1920),
+                                fg_scale=fondo_escala,
+                                inset_pct=inset,
+                                fg_zoom=fondo_zoom,
+                                cintas=fondo_cintas,
+                                mensajes=fondo_mensajes,
+                                bg_crop_top=fondo_bg_crop_top,
+                                bg_crop_bottom=fondo_bg_crop_bottom,
+                                bg_speed=bg_video_speed,
+                                log_fn=logs if logs else None
+                            )
+                        else:
+                            aplicar_fondo_imagen(
+                                in_path,
+                                out_path,
+                                bg_image_path,
+                                estilo=fondo_estilo,
+                                target_size=fondo_target or (1080, 1920),
+                                fg_scale=fondo_escala,
+                                inset_pct=inset,
+                                fg_zoom=fondo_zoom,
+                                cintas=fondo_cintas,
+                                mensajes=fondo_mensajes,
+                                bg_crop_top=fondo_bg_crop_top,
+                                bg_crop_bottom=fondo_bg_crop_bottom,
+                                log_fn=logs if logs else None
+                            )
 
         elif not es_audio:
             output_videos = [video_path]
@@ -416,6 +473,24 @@ def procesar_video(
                     mezclados.append(video_seg)
             output_videos = mezclados
 
+        if intro_path and os.path.exists(intro_path) and output_videos:
+            if logs:
+                logs("ðŸŽ¬ Agregando intro...")
+            con_intro = []
+            for idx, video_seg in enumerate(output_videos, start=1):
+                try:
+                    intro_dir = os.path.join(os.path.dirname(video_seg), "intro")
+                    os.makedirs(intro_dir, exist_ok=True)
+                    base = os.path.splitext(os.path.basename(video_seg))[0]
+                    out_path = os.path.join(intro_dir, f"{base}_intro.mp4")
+                    concat_videos_reencode([intro_path, video_seg], out_path, log_fn=logs if logs else None)
+                    con_intro.append(out_path)
+                except Exception as exc:
+                    if logs:
+                        logs(f"Advertencia: intro no aplicado en parte {idx} ({exc})")
+                    con_intro.append(video_seg)
+            output_videos = con_intro
+
         return {
             "videos": output_videos,
             "base_dir": base_dir,
@@ -532,6 +607,50 @@ def procesar_corte_individual(
         raise e
     finally:
         if barra: barra.set(0)
+
+
+def procesar_corte_zoom(
+    video_path: str,
+    crop_top_pct: float = 25.0,
+    crop_bottom_pct: float = 25.0,
+    crop_left_pct: float = 0.0,
+    crop_right_pct: float = 0.0,
+    zoom: float = 1.0,
+    bg_video_path: str | None = None,
+    cinta: dict | None = None,
+    start_sec: float | None = None,
+    end_sec: float | None = None,
+    logs=None,
+):
+    """
+    Aplica recorte por porcentajes + zoom centrado y opcional fondo video loop.
+    """
+    if not video_path or not os.path.exists(video_path):
+        raise FileNotFoundError(f"No se encontró el video: {video_path}")
+    base_name = nombre_base_principal(video_path)
+    base_dir = output_base_dir(video_path)
+    out_dir = next_correlative_dir(base_dir, "corte_zoom", "corte-zoom")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{base_name}_zoom.mp4")
+    if logs:
+        logs("Aplicando corte + zoom...")
+    aplicar_corte_zoom_fondo_video(
+        input_path=video_path,
+        output_path=out_path,
+        crop_top_pct=crop_top_pct,
+        crop_bottom_pct=crop_bottom_pct,
+        crop_left_pct=crop_left_pct,
+        crop_right_pct=crop_right_pct,
+        zoom=zoom,
+        bg_video_path=bg_video_path,
+        cinta=cinta,
+        start_sec=start_sec,
+        end_sec=end_sec,
+        log_fn=logs if logs else None,
+    )
+    if logs:
+        logs(f"✅ Corte + zoom listo: {out_path}")
+    return out_path
 
 
 def _ffmpeg_escape_path(path: str) -> str:

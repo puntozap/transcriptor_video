@@ -211,6 +211,391 @@ def concat_videos_ffmpeg(video_paths: list[str], output_path: str, log_fn=None) 
         except Exception:
             pass
 
+def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None) -> str:
+    """
+    Concatena re-encodificando para evitar desincronización o pitch raro cuando
+    los clips tienen distintos parámetros de audio.
+    """
+    if not video_paths:
+        raise ValueError("No hay videos para concatenar.")
+    if len(video_paths) == 1:
+        os.replace(video_paths[0], output_path)
+        return output_path
+    if len(video_paths) != 2:
+        raise ValueError("concat_videos_reencode soporta exactamente 2 videos.")
+    v0, v1 = video_paths
+    if log_fn:
+        log_fn("🔗 Concatenando con re-encode (compatibilidad audio)...")
+    temp_dir = os.path.join(tempfile.gettempdir(), f"concat_fix_{uuid.uuid4().hex}")
+    os.makedirs(temp_dir, exist_ok=True)
+    try:
+        fixed_paths = []
+        for idx, src in enumerate([v0, v1], start=1):
+            has_audio = tiene_audio(src)
+            dur = obtener_duracion_segundos(src)
+            fixed = os.path.join(temp_dir, f"fixed_{idx:02d}.mp4")
+            if has_audio:
+                cmd_fix = [
+                    "ffmpeg", "-y",
+                    "-i", src,
+                    "-c:v", "libx264",
+                    "-c:a", "aac",
+                    "-ar", "48000",
+                    "-ac", "2",
+                    "-movflags", "+faststart",
+                    fixed,
+                ]
+            else:
+                cmd_fix = [
+                    "ffmpeg", "-y",
+                    "-i", src,
+                    "-f", "lavfi",
+                    "-t", f"{max(0.1, dur):.3f}",
+                    "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+                    "-shortest",
+                    "-c:v", "libx264",
+                    "-c:a", "aac",
+                    "-ar", "48000",
+                    "-ac", "2",
+                    "-movflags", "+faststart",
+                    fixed,
+                ]
+            result_fix = subprocess.run(cmd_fix, capture_output=True, text=True)
+            if result_fix.returncode != 0:
+                err_fix = (result_fix.stderr or "").strip()
+                raise RuntimeError(f"Re-encode previo falló: {err_fix[-300:]}")
+            fixed_paths.append(fixed)
+
+        return concat_videos_ffmpeg(fixed_paths, output_path, log_fn=log_fn)
+    finally:
+        try:
+            if os.path.exists(temp_dir):
+                for name in os.listdir(temp_dir):
+                    try:
+                        os.remove(os.path.join(temp_dir, name))
+                    except Exception:
+                        pass
+                os.rmdir(temp_dir)
+        except Exception:
+            pass
+
+def aplicar_corte_zoom_fondo_video(
+    input_path: str,
+    output_path: str,
+    crop_top_pct: float,
+    crop_bottom_pct: float,
+    crop_left_pct: float,
+    crop_right_pct: float,
+    zoom: float = 1.0,
+    bg_video_path: str | None = None,
+    cinta: dict | None = None,
+    start_sec: float | None = None,
+    end_sec: float | None = None,
+    log_fn=None,
+):
+    """
+    Recorta por porcentajes, centra, aplica zoom y opcionalmente fondo video en loop.
+    """
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"No se encontró el video: {input_path}")
+    w, h = obtener_tamano_video(input_path)
+    if w % 2 != 0:
+        w += 1
+    if h % 2 != 0:
+        h += 1
+
+    def _clamp_pct(val: float) -> float:
+        try:
+            v = float(val) / 100.0
+        except Exception:
+            v = 0.0
+        return max(0.0, min(v, 0.8))
+
+    top = _clamp_pct(crop_top_pct)
+    bottom = _clamp_pct(crop_bottom_pct)
+    left = _clamp_pct(crop_left_pct)
+    right = _clamp_pct(crop_right_pct)
+    max_sum = 0.9
+    if left + right > max_sum:
+        scale = max_sum / max(1e-6, (left + right))
+        left *= scale
+        right *= scale
+    if top + bottom > max_sum:
+        scale = max_sum / max(1e-6, (top + bottom))
+        top *= scale
+        bottom *= scale
+    zoom = max(1.0, min(float(zoom), 2.0))
+
+    crop_w_expr = f"trunc(iw*{1 - left - right:.4f}/2)*2"
+    crop_h_expr = f"trunc(ih*{1 - top - bottom:.4f}/2)*2"
+    crop_x_expr = f"trunc(iw*{left:.4f}/2)*2"
+    crop_y_expr = f"trunc(ih*{top:.4f}/2)*2"
+
+    crop_filter = f"crop={crop_w_expr}:{crop_h_expr}:{crop_x_expr}:{crop_y_expr}"
+    zoom_scale = f"scale=trunc(iw*{zoom:.4f}/2)*2:trunc(ih*{zoom:.4f}/2)*2"
+
+    trim_args = []
+    if start_sec is not None:
+        trim_args += ["-ss", f"{max(0.0, float(start_sec)):.3f}"]
+    if end_sec is not None and start_sec is not None and end_sec > start_sec:
+        trim_args += ["-t", f"{float(end_sec - start_sec):.3f}"]
+
+    overlay_path = None
+    if cinta:
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        overlay_path = os.path.join(tempfile.gettempdir(), f"cinta_zoom_{uuid.uuid4().hex}.png")
+        tmp_c = _render_cintas_on_background("", w, h, [cinta], transparent=True)
+        if not tmp_c:
+            raise RuntimeError("No se pudo renderizar cinta con Pillow.")
+        c_img = Image.open(tmp_c).convert("RGBA")
+        overlay.alpha_composite(c_img)
+        overlay.save(overlay_path, "PNG")
+
+    if bg_video_path and os.path.exists(bg_video_path):
+        cmd = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", bg_video_path]
+        cmd += trim_args + ["-i", input_path]
+        if overlay_path:
+            cmd += ["-loop", "1", "-i", overlay_path]
+        filtro = (
+            f"[0:v]scale={w}:{h}[bg];"
+            f"[1:v]{crop_filter},{zoom_scale}[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[base]"
+        )
+        if overlay_path:
+            filtro += ";[base][2:v]overlay=0:0:format=auto[v]"
+        else:
+            filtro = filtro.replace("[base]", "[v]")
+        cmd += [
+            "-filter_complex", filtro,
+            "-map", "[v]",
+            "-map", "1:a?",
+            "-shortest",
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+    else:
+        cmd = ["ffmpeg", "-y"] + trim_args + ["-i", input_path]
+        if overlay_path:
+            cmd += ["-loop", "1", "-i", overlay_path]
+        filtro = (
+            f"[0:v]{crop_filter},scale={w}:{h},{zoom_scale},"
+            f"crop={w}:{h}:(iw-{w})/2:(ih-{h})/2,setsar=1[base]"
+        )
+        if overlay_path:
+            filtro += ";[base][1:v]overlay=0:0:format=auto[v]"
+        else:
+            filtro = filtro.replace("[base]", "[v]")
+        cmd += [
+            "-filter_complex", filtro,
+            "-map", "[v]",
+            "-map", "0:a?",
+            "-shortest",
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+    if log_fn:
+        log_fn(f"🎯 Corte + zoom: {os.path.basename(output_path)}")
+        log_fn(f"Filtro: {filtro}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        raise RuntimeError(f"Corte+zoom falló: {err[-800:]}")
+
+def aplicar_encuadre_base(
+    input_path: str,
+    output_path: str,
+    inset_pct: tuple[float, float, float, float],
+    zoom: float = 1.0,
+    log_fn=None,
+):
+    """
+    Aplica encuadre (recorte por porcentajes) y zoom centrado al video base.
+    """
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"No se encontró el video: {input_path}")
+    w, h = obtener_tamano_video(input_path)
+    if w % 2 != 0:
+        w += 1
+    if h % 2 != 0:
+        h += 1
+    l, r, t, b = inset_pct
+    l = max(0.0, min(float(l), 0.45))
+    r = max(0.0, min(float(r), 0.45))
+    t = max(0.0, min(float(t), 0.45))
+    b = max(0.0, min(float(b), 0.45))
+    zoom = max(0.5, min(float(zoom), 2.0))
+
+    crop_w_expr = f"trunc(iw*(1-{l+r:.4f})/2)*2"
+    crop_h_expr = f"trunc(ih*(1-{t+b:.4f})/2)*2"
+    crop_x_expr = f"trunc(iw*{l:.4f}/2)*2"
+    crop_y_expr = f"trunc(ih*{t:.4f}/2)*2"
+
+    filtro = f"[0:v]crop={crop_w_expr}:{crop_h_expr}:{crop_x_expr}:{crop_y_expr},scale={w}:{h}"
+    if zoom != 1.0:
+        filtro += f",scale=trunc(iw*{zoom:.4f}/2)*2:trunc(ih*{zoom:.4f}/2)*2,crop={w}:{h}:(iw-{w})/2:(ih-{h})/2"
+    filtro += ",setsar=1[v]"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-filter_complex", filtro,
+        "-map", "[v]",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    if log_fn:
+        log_fn(f"🎯 Aplicando encuadre base: {os.path.basename(output_path)}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        raise RuntimeError(f"Encuadre base falló: {err[-800:]}")
+
+
+def _normalize_hex_color(color: str, fallback: str = "#FFFFFF") -> str:
+    raw = (color or "").strip()
+    if not raw:
+        raw = fallback
+    if raw.startswith("0x"):
+        raw = "#" + raw[2:]
+    if not raw.startswith("#"):
+        raw = "#" + raw
+    if len(raw) == 4:
+        raw = "#" + raw[1] * 2 + raw[2] * 2 + raw[3] * 2
+    if len(raw) != 7:
+        return fallback
+    return raw.upper()
+
+
+def transparentar_video_ffmpeg(
+    input_path: str,
+    output_path: str,
+    color: str = "#FFFFFF",
+    similarity: float = 0.1,
+    blend: float = 0.0,
+    chunk_seconds: float | None = None,
+    log_fn=None,
+):
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"No se encontro el video: {input_path}")
+    similarity = max(0.0, min(float(similarity), 1.0))
+    blend = max(0.0, min(float(blend), 1.0))
+    color = _normalize_hex_color(color)
+    color_hex = "0x" + color[1:]
+
+    if chunk_seconds is not None:
+        try:
+            chunk_seconds = float(chunk_seconds)
+        except Exception:
+            chunk_seconds = None
+    if chunk_seconds and chunk_seconds > 0:
+        temp_dir = os.path.join(tempfile.gettempdir(), f"transparentar_{uuid.uuid4().hex}")
+        os.makedirs(temp_dir, exist_ok=True)
+        partes = dividir_video_ffmpeg(
+            input_path,
+            segundos_por_parte=chunk_seconds,
+            out_dir=temp_dir,
+            log_fn=log_fn,
+        )
+        if not partes:
+            raise RuntimeError("No se pudieron generar partes para transparentar.")
+        outs = []
+        for idx, parte in enumerate(partes, start=1):
+            out_part = os.path.join(temp_dir, f"parte_{idx:03d}_alpha.mov")
+            transparentar_video_ffmpeg(
+                parte,
+                out_part,
+                color=color,
+                similarity=similarity,
+                blend=blend,
+                chunk_seconds=None,
+                log_fn=log_fn,
+            )
+            outs.append(out_part)
+        concat_videos_ffmpeg(outs, output_path, log_fn=log_fn)
+        try:
+            for p in partes + outs:
+                if os.path.exists(p):
+                    os.remove(p)
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+        return output_path
+
+    filtro = f"colorkey={color_hex}:{similarity:.3f}:{blend:.3f},format=yuva444p10le"
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-vf",
+        filtro,
+        "-c:v",
+        "prores_ks",
+        "-profile:v",
+        "4",
+        "-pix_fmt",
+        "yuva444p10le",
+        "-c:a",
+        "aac",
+        "-ar",
+        "48000",
+        "-movflags",
+        "+faststart",
+        output_path,
+    ]
+    if log_fn:
+        log_fn(f"🔎 Transparentando video: {os.path.basename(output_path)}")
+        log_fn(f"Filtro: {filtro}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        raise RuntimeError(f"Transparentar video fallo: {err[-500:]}")
+    return output_path
+
+
+def transparentar_imagen_ffmpeg(
+    input_path: str,
+    output_path: str,
+    color: str = "#FFFFFF",
+    similarity: float = 0.1,
+    blend: float = 0.0,
+    log_fn=None,
+):
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"No se encontro la imagen: {input_path}")
+    similarity = max(0.0, min(float(similarity), 1.0))
+    blend = max(0.0, min(float(blend), 1.0))
+    color = _normalize_hex_color(color)
+    color_hex = "0x" + color[1:]
+
+    filtro = f"colorkey={color_hex}:{similarity:.3f}:{blend:.3f},format=rgba"
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-vf",
+        filtro,
+        "-frames:v",
+        "1",
+        output_path,
+    ]
+    if log_fn:
+        log_fn(f"🔎 Transparentando imagen: {os.path.basename(output_path)}")
+        log_fn(f"Filtro: {filtro}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        raise RuntimeError(f"Transparentar imagen fallo: {err[-500:]}")
+    return output_path
+
 
 def _pil_color(value: str, fallback: str) -> str:
     val = (value or "").strip()
@@ -341,8 +726,31 @@ def _render_cintas_on_background(
         role = str(c.get("rol", "") or "")
         name_fontfile = (c.get("fontfile_name") or "").strip()
         role_fontfile = (c.get("fontfile_role") or "").strip()
-        name_size = max(14, int(height_px * 0.45))
-        role_size = max(12, int(height_px * 0.30))
+        try:
+            text_scale = float(c.get("text_scale", 1.0))
+        except Exception:
+            text_scale = 1.0
+        text_scale = max(0.6, min(text_scale, 2.0))
+        if "name_scale" in c:
+            try:
+                name_scale = float(c.get("name_scale", 0.65))
+            except Exception:
+                name_scale = 0.65
+        else:
+            # Legacy default for other flows (Corte sin bordes).
+            name_scale = 0.45
+        if "role_scale" in c:
+            try:
+                role_scale = float(c.get("role_scale", 0.45))
+            except Exception:
+                role_scale = 0.45
+        else:
+            # Legacy default for other flows (Corte sin bordes).
+            role_scale = 0.30
+        name_scale = max(0.3, min(name_scale, 1.2))
+        role_scale = max(0.2, min(role_scale, 1.0))
+        name_size = max(18, int(height_px * name_scale * text_scale))
+        role_size = max(14, int(height_px * role_scale * text_scale))
         try:
             if name_fontfile and os.path.exists(name_fontfile):
                 name_font = ImageFont.truetype(name_fontfile, name_size)
@@ -1790,6 +2198,155 @@ def aplicar_fondo_imagen(
     if result.returncode != 0 and log_fn:
         err = (result.stderr or "").strip()
         log_fn(f"❌ Fondo falló: {err[-1000:]}")
+
+def aplicar_fondo_video(
+    input_path: str,
+    output_path: str,
+    video_path: str,
+    estilo: str = "fill",
+    target_size: tuple[int, int] | None = None,
+    fg_scale: float = 0.92,
+    inset_pct: tuple[float, float, float, float] | None = None,
+    fg_zoom: float = 1.0,
+    cintas: list[dict] | None = None,
+    mensajes: list[dict] | None = None,
+    bg_crop_top: float = 0.0,
+    bg_crop_bottom: float = 0.0,
+    bg_speed: float = 1.0,
+    log_fn=None
+):
+    """
+    Aplica un video de fondo (en loop) a un video.
+    estilos: fill | fit | blur
+    """
+    estilo = (estilo or "fill").lower()
+    if estilo not in ("fill", "fit", "blur"):
+        estilo = "fill"
+
+    if target_size is None:
+        target_size = obtener_tamano_video(input_path)
+    w, h = target_size
+    # ffmpeg/libx264 requiere dimensiones pares
+    if w % 2 != 0:
+        w += 1
+    if h % 2 != 0:
+        h += 1
+
+    fg_scale = max(0.5, min(float(fg_scale), 1.0))
+    try:
+        fg_zoom = float(fg_zoom)
+    except Exception:
+        fg_zoom = 1.0
+    fg_zoom = max(0.5, min(fg_zoom, 2.0))
+    fg_w = max(2, int(w * fg_scale))
+    fg_h = max(2, int(h * fg_scale))
+    if fg_w % 2 != 0:
+        fg_w += 1
+    if fg_h % 2 != 0:
+        fg_h += 1
+    if inset_pct:
+        l, r, t, b = inset_pct
+        l = max(0.0, min(float(l), 0.45))
+        r = max(0.0, min(float(r), 0.45))
+        t = max(0.0, min(float(t), 0.45))
+        b = max(0.0, min(float(b), 0.45))
+        content_w = max(2, int(w * (1 - l - r)))
+        content_h = max(2, int(h * (1 - t - b)))
+        fg_w = content_w
+        fg_h = content_h
+
+    if fg_zoom != 1.0:
+        fg_w = max(2, int(fg_w * fg_zoom))
+        fg_h = max(2, int(fg_h * fg_zoom))
+
+    offset_x = "(W-w)/2"
+    offset_y = "(H-h)/2"
+    if inset_pct:
+        l, r, t, b = inset_pct
+        offset_x = f"{int(w * l)}"
+        offset_y = f"{int(h * t)}"
+
+    overlay_path = None
+    if mensajes or cintas:
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        overlay_path = os.path.join(tempfile.gettempdir(), f"overlay_{uuid.uuid4().hex}.png")
+        if mensajes:
+            tmp_msg = _render_mensajes_on_background("", w, h, mensajes, transparent=True)
+            if not tmp_msg:
+                raise RuntimeError("No se pudo renderizar mensaje con Pillow.")
+            msg_img = Image.open(tmp_msg).convert("RGBA")
+            overlay.alpha_composite(msg_img)
+        if cintas:
+            tmp_c = _render_cintas_on_background("", w, h, cintas, transparent=True)
+            if not tmp_c:
+                raise RuntimeError("No se pudo renderizar cintas con Pillow.")
+            c_img = Image.open(tmp_c).convert("RGBA")
+            overlay.alpha_composite(c_img)
+        overlay.save(overlay_path, "PNG")
+
+    try:
+        bg_speed = float(bg_speed)
+    except Exception:
+        bg_speed = 1.0
+    bg_speed = max(0.25, min(bg_speed, 2.0))
+    bg_pts = f"{1.0 / bg_speed:.4f}*PTS"
+    bg_filter_part = f"[0:v]setpts={bg_pts},scale={w}:{h}"
+    try:
+        bg_crop_top = float(bg_crop_top)
+        bg_crop_bottom = float(bg_crop_bottom)
+    except Exception:
+        bg_crop_top = 0.0
+        bg_crop_bottom = 0.0
+    bg_crop_top = max(0.0, min(bg_crop_top, 0.45))
+    bg_crop_bottom = max(0.0, min(bg_crop_bottom, 0.45))
+    bg_crop_total = bg_crop_top + bg_crop_bottom
+    if bg_crop_total > 0:
+        crop_h_expr = f"trunc(ih*(1-{bg_crop_total:.4f})/2)*2"
+        crop_y_expr = f"trunc(ih*{bg_crop_top:.4f}/2)*2"
+        bg_filter_part += f",crop=iw:{crop_h_expr}:0:{crop_y_expr},scale={w}:{h}"
+
+    if estilo == "blur":
+        filtro = (
+            f"{bg_filter_part},boxblur=20:1[bg];"
+            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
+        )
+    elif estilo == "fit":
+        filtro = (
+            f"{bg_filter_part}[bg];"
+            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
+        )
+    else:  # fill
+        filtro = (
+            f"{bg_filter_part}[bg];"
+            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
+        )
+
+    cmd = ["ffmpeg", "-y", "-stream_loop", "-1", "-i", video_path, "-i", input_path]
+    if overlay_path:
+        cmd += ["-loop", "1", "-i", overlay_path]
+        filtro = filtro.replace("[v]", "[base]")
+        filtro = filtro.replace("[bg][fg]overlay=", "[bg][fg]overlay=")
+        filtro += ";[base][2:v]overlay=0:0:format=auto[v]"
+    cmd += [
+        "-filter_complex", filtro,
+        "-map", "[v]",
+        "-map", "1:a?",
+        "-shortest",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    if log_fn:
+        log_fn(f"Aplicando fondo video ({estilo}): {os.path.basename(output_path)}")
+        log_fn(f"Filtro fondo: {filtro}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 and log_fn:
+        err = (result.stderr or "").strip()
+        log_fn(f"Fondo video fallo: {err[-1000:]}")
 
 def detectar_crop_barras(path: str) -> str | None:
     """

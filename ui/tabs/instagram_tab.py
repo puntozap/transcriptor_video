@@ -61,10 +61,12 @@ def create_instagram_tab(parent, context):
     tabview.pack(fill="both", expand=True, padx=5, pady=5)
     
     tab_upload = tabview.add("Subir Reel")
-    tab_config = tabview.add("Configuración")
+    tab_post = tabview.add("Post links")
+    tab_config = tabview.add("Configuracion")
     
     _setup_config_tab(tab_config, context)
     _setup_upload_tab(tab_upload, context)
+    _setup_post_links_tab(tab_post, context)
 
 def _setup_config_tab(parent, context):
     log = context.get("log", print)
@@ -220,6 +222,15 @@ def _setup_upload_tab(parent, context):
     ctk.CTkButton(btns, text="Examinar", width=100, command=browse).pack(side="left", padx=(0, 8))
     ctk.CTkButton(btns, text="Lote", width=80, command=browse_batch).pack(side="left")
 
+    ctk.CTkLabel(parent, text="URL publica del video (opcional):").pack(anchor="w", padx=20, pady=(8, 0))
+    entry_url = ctk.CTkEntry(parent, placeholder_text="https://tu-dominio.com/videos/mi_reel.mp4")
+    entry_url.pack(fill="x", padx=20, pady=(5, 10))
+    ctk.CTkLabel(
+        parent,
+        text="Si usas URL, debe ser publica y directa al MP4 (sin redirects).",
+        text_color="gray",
+    ).pack(anchor="w", padx=20, pady=(0, 6))
+
     # Caption
     ctk.CTkLabel(parent, text="Descripción (Caption):").pack(anchor="w", padx=20, pady=(10, 0))
     txt_caption = ctk.CTkTextbox(parent, height=100)
@@ -260,9 +271,6 @@ def _setup_upload_tab(parent, context):
 
     def generar_caption_ia():
         video_path = entry_file.get().strip()
-        if not video_path or not os.path.exists(video_path):
-            log("❌ Archivo no válido para IA.")
-            return
         def _run():
             try:
                 ai = generar_descripcion_instagram(
@@ -283,6 +291,46 @@ def _setup_upload_tab(parent, context):
     chk_feed = ctk.CTkCheckBox(parent, text="Publicar también en el Feed")
     chk_feed.pack(anchor="w", padx=20, pady=5)
     chk_feed.select()
+
+    chk_story = ctk.CTkCheckBox(parent, text="Publicar tambien en Stories")
+    chk_story.pack(anchor="w", padx=20, pady=(0, 5))
+
+    story_tag_row = ctk.CTkFrame(parent, fg_color="transparent")
+    story_tag_row.pack(fill="x", padx=20, pady=(0, 8))
+    ctk.CTkLabel(story_tag_row, text="Story tag @ (opcional):", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_story_tag = ctk.CTkEntry(story_tag_row, width=200, placeholder_text="usuario")
+    entry_story_tag.pack(side="left", padx=(8, 8))
+    if config.get("story_tag_username"):
+        entry_story_tag.insert(0, config.get("story_tag_username"))
+    ctk.CTkLabel(story_tag_row, text="x", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_story_x = ctk.CTkEntry(story_tag_row, width=60)
+    entry_story_x.pack(side="left", padx=(6, 8))
+    entry_story_x.insert(0, str(config.get("story_tag_x", 0.5)))
+    ctk.CTkLabel(story_tag_row, text="y", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_story_y = ctk.CTkEntry(story_tag_row, width=60)
+    entry_story_y.pack(side="left", padx=(6, 0))
+    entry_story_y.insert(0, str(config.get("story_tag_y", 0.85)))
+
+    def _build_story_tags():
+        username = entry_story_tag.get().strip().lstrip("@")
+        if not username:
+            return None
+        try:
+            x = float(entry_story_x.get().strip().replace(",", "."))
+        except Exception:
+            x = 0.5
+        try:
+            y = float(entry_story_y.get().strip().replace(",", "."))
+        except Exception:
+            y = 0.85
+        x = max(0.0, min(1.0, x))
+        y = max(0.0, min(1.0, y))
+        data = _load_config()
+        data["story_tag_username"] = username
+        data["story_tag_x"] = x
+        data["story_tag_y"] = y
+        _save_config(data)
+        return [{"username": username, "x": x, "y": y}]
 
     chunk_row = ctk.CTkFrame(parent, fg_color="transparent")
     chunk_row.pack(fill="x", padx=20, pady=(6, 0))
@@ -311,18 +359,21 @@ def _setup_upload_tab(parent, context):
 
     def process_upload():
         video_path = entry_file.get().strip()
+        video_url = entry_url.get().strip()
         caption = txt_caption.get("1.0", "end").strip()
         share_feed = bool(chk_feed.get())
+        share_story = bool(chk_story.get())
         chunk_size_mb = _get_chunk_size_mb()
         _persist_chunk_size(chunk_size_mb)
         config = _load_config()
 
-        if not video_path or not os.path.exists(video_path):
-            log("❌ Archivo no válido.")
-            return
         if not config.get("account_id") or not config.get("access_token"):
-            log("❌ Faltan credenciales en la pestaña Configuración.")
+            log("Error: Faltan credenciales en la pestana Configuracion.")
             return
+        if not video_url and (not video_path or not os.path.exists(video_path)):
+            log("Error: Debes seleccionar un archivo o pegar una URL publica.")
+            return
+
 
         def _update_tokens(data: dict):
             fresh = _load_config()
@@ -340,13 +391,26 @@ def _setup_upload_tab(parent, context):
                 token_expires_at=config.get("token_expires_at"),
                 on_token_update=_update_tokens,
             )
-            uploader.upload_reel_resumable(
-                video_path,
-                caption,
-                share_feed,
-                log_fn=log,
-                chunk_size_mb=chunk_size_mb,
-            )
+            if video_url:
+                log("IG: Subiendo desde URL publica...")
+                media_id = uploader.upload_reel(
+                    video_url,
+                    caption,
+                    share_feed,
+                    log_fn=log,
+                )
+                if share_story and media_id:
+                    uploader.upload_story_video_auto(video_url, log_fn=log, user_tags=_build_story_tags())
+            else:
+                media_id = uploader.upload_reel_resumable(
+                    video_path,
+                    caption,
+                    share_feed,
+                    log_fn=log,
+                    chunk_size_mb=chunk_size_mb,
+                )
+                if share_story:
+                    log("IG: Story requiere URL publica. Omite Story o pega una URL.")
         
         threading.Thread(target=_run, daemon=True).start()
 
@@ -356,7 +420,7 @@ def _setup_upload_tab(parent, context):
         chunk_size_mb = _get_chunk_size_mb()
         _persist_chunk_size(chunk_size_mb)
         if not config.get("account_id") or not config.get("access_token"):
-            log("❌ Faltan credenciales en la pestaña Configuración.")
+            log("Error: Faltan credenciales en la pestana Configuracion.")
             return
         files = batch_state.get("paths") or []
         if not files:
@@ -409,3 +473,122 @@ def _setup_upload_tab(parent, context):
 
     ctk.CTkButton(parent, text="🚀 Publicar en Instagram", command=process_upload, fg_color="#E1306C", hover_color="#C13584").pack(pady=(10, 8))
     ctk.CTkButton(parent, text="📦 Subir lote con IA", command=process_batch).pack(pady=(0, 20))
+
+
+def _setup_post_links_tab(parent, context):
+    log = context.get("log", print)
+    config = _load_config()
+
+    ctk.CTkLabel(parent, text="Publicar Post (links)", font=("Arial", 16, "bold")).pack(pady=15)
+    ctk.CTkLabel(
+        parent,
+        text="Pega una URL por linea. 1 URL = post simple. 2+ URLs = carousel (max 10).",
+        text_color="gray",
+    ).pack(pady=(0, 10))
+
+    txt_urls = ctk.CTkTextbox(parent, height=160)
+    txt_urls.pack(fill="x", padx=20, pady=(0, 10))
+
+    ctk.CTkLabel(parent, text="Descripcion (Caption):").pack(anchor="w", padx=20, pady=(10, 0))
+    txt_caption = ctk.CTkTextbox(parent, height=100)
+    txt_caption.pack(fill="x", padx=20, pady=(5, 10))
+
+    def _parse_urls():
+        raw = txt_urls.get("1.0", "end").strip()
+        if not raw:
+            return []
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        urls = [u for u in lines if u.lower().startswith("http")]
+        return urls
+
+    chk_story = ctk.CTkCheckBox(parent, text="Publicar tambien en Stories")
+    chk_story.pack(anchor="w", padx=20, pady=(0, 8))
+
+    story_tag_row = ctk.CTkFrame(parent, fg_color="transparent")
+    story_tag_row.pack(fill="x", padx=20, pady=(0, 8))
+    ctk.CTkLabel(story_tag_row, text="Story tag @ (opcional):", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_story_tag = ctk.CTkEntry(story_tag_row, width=200, placeholder_text="usuario")
+    entry_story_tag.pack(side="left", padx=(8, 8))
+    if config.get("story_tag_username"):
+        entry_story_tag.insert(0, config.get("story_tag_username"))
+    ctk.CTkLabel(story_tag_row, text="x", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_story_x = ctk.CTkEntry(story_tag_row, width=60)
+    entry_story_x.pack(side="left", padx=(6, 8))
+    entry_story_x.insert(0, str(config.get("story_tag_x", 0.5)))
+    ctk.CTkLabel(story_tag_row, text="y", font=ctk.CTkFont(size=12)).pack(side="left")
+    entry_story_y = ctk.CTkEntry(story_tag_row, width=60)
+    entry_story_y.pack(side="left", padx=(6, 0))
+    entry_story_y.insert(0, str(config.get("story_tag_y", 0.85)))
+
+    def _build_story_tags():
+        username = entry_story_tag.get().strip().lstrip("@")
+        if not username:
+            return None
+        try:
+            x = float(entry_story_x.get().strip().replace(",", "."))
+        except Exception:
+            x = 0.5
+        try:
+            y = float(entry_story_y.get().strip().replace(",", "."))
+        except Exception:
+            y = 0.85
+        x = max(0.0, min(1.0, x))
+        y = max(0.0, min(1.0, y))
+        data = _load_config()
+        data["story_tag_username"] = username
+        data["story_tag_x"] = x
+        data["story_tag_y"] = y
+        _save_config(data)
+        return [{"username": username, "x": x, "y": y}]
+
+    def _is_video_url(url: str) -> bool:
+        low = url.lower()
+        return low.endswith(".mp4") or low.endswith(".mov") or low.endswith(".m4v") or low.endswith(".webm")
+
+    def publish_post():
+        urls = _parse_urls()
+        caption = txt_caption.get("1.0", "end").strip()
+        if not config.get("account_id") or not config.get("access_token"):
+            log("Error: Faltan credenciales en la pestana Configuracion.")
+            return
+        if not urls:
+            log("Error: Debes pegar al menos una URL valida.")
+            return
+
+        def _update_tokens(data: dict):
+            fresh = _load_config()
+            fresh["access_token"] = data.get("access_token", fresh.get("access_token"))
+            if data.get("expires_at"):
+                fresh["token_expires_at"] = data.get("expires_at")
+            _save_config(fresh)
+
+        def _run():
+            uploader = InstagramUploader(
+                config["access_token"],
+                config["account_id"],
+                app_id=config.get("app_id"),
+                app_secret=config.get("app_secret"),
+                token_expires_at=config.get("token_expires_at"),
+                on_token_update=_update_tokens,
+            )
+            if len(urls) == 1:
+                log("IG: Publicando imagen (post simple)...")
+                media_id = uploader.upload_image_post(urls[0], caption, log_fn=log)
+                if chk_story.get() and media_id:
+                    if _is_video_url(urls[0]):
+                        uploader.upload_story_video_auto(urls[0], log_fn=log, user_tags=_build_story_tags())
+                    else:
+                        uploader.upload_story_image(urls[0], log_fn=log, user_tags=_build_story_tags())
+            else:
+                log(f"IG: Publicando carousel ({len(urls)} items)...")
+                media_id = uploader.upload_carousel_from_urls(urls, caption, log_fn=log)
+                if chk_story.get() and media_id:
+                    first = urls[0]
+                    if _is_video_url(first):
+                        uploader.upload_story_video_auto(first, log_fn=log, user_tags=_build_story_tags())
+                    else:
+                        uploader.upload_story_image(first, log_fn=log, user_tags=_build_story_tags())
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    ctk.CTkButton(parent, text="Publicar Post", command=publish_post, fg_color="#E1306C", hover_color="#C13584").pack(pady=(6, 20))

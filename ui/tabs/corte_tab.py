@@ -94,12 +94,30 @@ def create_tab(parent, context):
         try:
             recorte_manual_top = float(entry_recorte_top.get().strip().replace(",", "."))
         except Exception:
-            recorte_manual_top = float(defaults.get("recorte_manual_top", 0.0))
+            recorte_manual_top = float(defaults.get("recorte_manual_top", 0.0)) * 100.0
         try:
             recorte_manual_bottom = float(entry_recorte_bottom.get().strip().replace(",", "."))
         except Exception:
-            recorte_manual_bottom = float(defaults.get("recorte_manual_bottom", 0.0))
+            recorte_manual_bottom = float(defaults.get("recorte_manual_bottom", 0.0)) * 100.0
+        if recorte_manual_top > 1.0:
+            recorte_manual_top = recorte_manual_top / 100.0
+        if recorte_manual_bottom > 1.0:
+            recorte_manual_bottom = recorte_manual_bottom / 100.0
         fondo_path = estado["fondo_path"] if fondo_var.get() else None
+        fondo_video_path = None
+        if fondo_var.get() and fondo_video_var.get():
+            fondo_video_path = estado.get("fondo_video_path")
+            if fondo_video_path and not os.path.exists(fondo_video_path):
+                fondo_video_path = None
+        try:
+            fondo_video_speed = float(fondo_video_speed_var.get())
+        except Exception:
+            fondo_video_speed = 1.0
+        intro_path = None
+        if intro_var.get():
+            intro_path = estado.get("intro_path")
+            if intro_path and not os.path.exists(intro_path):
+                intro_path = None
         fondo_estilo = fondo_estilo_var.get().lower()
         try:
             fondo_escala = float(entry_fondo_escala.get().strip().replace(",", "."))
@@ -206,6 +224,10 @@ def create_tab(parent, context):
         def run_corte():
             try:
                 estado["visualizador"] = visualizador_var.get()
+                estado["fondo_video_loop"] = bool(fondo_video_var.get())
+                estado["fondo_video_speed"] = float(fondo_video_speed_var.get())
+                estado["intro_enabled"] = bool(intro_var.get())
+                estado["intro_path"] = estado.get("intro_path")
                 estado["posicion_visualizador"] = obtener_posicion_visualizador()
                 estado["visualizador_opacidad"] = visualizador_opacity_var.get()
                 estado["visualizador_color"] = visualizador_color_var.get()
@@ -228,6 +250,9 @@ def create_tab(parent, context):
                     recorte_manual_bottom,
                     False,
                     fondo_path,
+                    fondo_video_path,
+                    fondo_video_speed,
+                    intro_path,
                     fondo_estilo,
                     fondo_escala,
                     fondo_usar_tamano_imagen,
@@ -253,6 +278,7 @@ def create_tab(parent, context):
                     musica_inicio=musica_inicio,
                     musica_fin=musica_fin,
                     musica_inicio_video=musica_inicio_video,
+                    
                 )
                 if procesar_todo_var.get():
                     videos = []
@@ -320,12 +346,30 @@ def create_tab(parent, context):
         try:
             recorte_manual_top = float(entry_recorte_top.get().strip().replace(",", "."))
         except Exception:
-            recorte_manual_top = float(defaults.get("recorte_manual_top", 0.0))
+            recorte_manual_top = float(defaults.get("recorte_manual_top", 0.0)) * 100.0
         try:
             recorte_manual_bottom = float(entry_recorte_bottom.get().strip().replace(",", "."))
         except Exception:
-            recorte_manual_bottom = float(defaults.get("recorte_manual_bottom", 0.0))
+            recorte_manual_bottom = float(defaults.get("recorte_manual_bottom", 0.0)) * 100.0
+        if recorte_manual_top > 1.0:
+            recorte_manual_top = recorte_manual_top / 100.0
+        if recorte_manual_bottom > 1.0:
+            recorte_manual_bottom = recorte_manual_bottom / 100.0
         fondo_path = estado["fondo_path"] if fondo_var.get() else None
+        fondo_video_path = None
+        if fondo_var.get() and fondo_video_var.get():
+            fondo_video_path = estado.get("fondo_video_path")
+            if fondo_video_path and not os.path.exists(fondo_video_path):
+                fondo_video_path = None
+        try:
+            fondo_video_speed = float(fondo_video_speed_var.get())
+        except Exception:
+            fondo_video_speed = 1.0
+        intro_path = None
+        if intro_var.get():
+            intro_path = estado.get("intro_path")
+            if intro_path and not os.path.exists(intro_path):
+                intro_path = None
         fondo_estilo = fondo_estilo_var.get().lower()
         try:
             fondo_escala = float(entry_fondo_escala.get().strip().replace(",", "."))
@@ -431,10 +475,18 @@ def create_tab(parent, context):
         vertical = vertical_var.get()
         if modo_sin_bordes:
             vertical = False
+        try:
+            fondo_video_speed = float(fondo_video_speed_var.get())
+        except Exception:
+            fondo_video_speed = 1.0
 
         def run_auto():
             try:
                 estado["visualizador"] = visualizador_var.get()
+                estado["fondo_video_loop"] = bool(fondo_video_var.get())
+                estado["fondo_video_speed"] = float(fondo_video_speed_var.get())
+                estado["intro_enabled"] = bool(intro_var.get())
+                estado["intro_path"] = estado.get("intro_path")
                 estado["posicion_visualizador"] = obtener_posicion_visualizador()
                 solo_video_flag = auto_subs_var.get()
                 if visualizador_var.get():
@@ -459,6 +511,9 @@ def create_tab(parent, context):
                     recorte_manual_bottom,
                     False,
                     fondo_path,
+                    fondo_video_path,
+                    fondo_video_speed,
+                    intro_path,
                     fondo_estilo,
                     fondo_escala,
                     fondo_usar_tamano_imagen,
@@ -484,6 +539,7 @@ def create_tab(parent, context):
                     musica_inicio=musica_inicio,
                     musica_fin=musica_fin,
                     musica_inicio_video=musica_inicio_video,
+                    
                 )
                 videos = []
                 if isinstance(result, dict):
@@ -788,19 +844,110 @@ def create_tab(parent, context):
     lbl_fondo = ctk.CTkLabel(row_fondo, text="(sin imagen)", font=ctk.CTkFont(size=12))
     lbl_fondo.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
+    fondo_video_var = ctk.BooleanVar(value=bool(estado.get("fondo_video_loop", False)))
+    chk_fondo_video = ctk.CTkCheckBox(
+        config,
+        text="Usar video loop de fondo (sin audio)",
+        variable=fondo_video_var,
+    )
+    chk_fondo_video.grid(row=19, column=0, sticky="w", padx=14, pady=(0, 8))
+
+    row_fondo_video = ctk.CTkFrame(config, fg_color="transparent")
+    row_fondo_video.grid(row=20, column=0, sticky="ew", padx=14, pady=(0, 10))
+    row_fondo_video.grid_columnconfigure(1, weight=1)
+
+    def seleccionar_fondo_video():
+        from ui.dialogs import seleccionar_video
+        vid = seleccionar_video()
+        if vid:
+            estado["fondo_video_path"] = vid
+            lbl_fondo_video.configure(text=os.path.basename(vid))
+
+    btn_fondo_video = ctk.CTkButton(
+        row_fondo_video,
+        text="Seleccionar video",
+        command=seleccionar_fondo_video,
+        height=28,
+        width=150,
+    )
+    btn_fondo_video.grid(row=0, column=0, sticky="w")
+
+    lbl_fondo_video = ctk.CTkLabel(row_fondo_video, text="(sin video)", font=ctk.CTkFont(size=12))
+    lbl_fondo_video.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    if estado.get("fondo_video_path"):
+        lbl_fondo_video.configure(text=os.path.basename(estado["fondo_video_path"]))
+
+    fondo_video_speed_var = tk.DoubleVar(value=float(estado.get("fondo_video_speed", 1.0) or 1.0))
+    lbl_fondo_speed = ctk.CTkLabel(config, text="Velocidad video fondo:", font=ctk.CTkFont(size=12))
+    lbl_fondo_speed.grid(row=21, column=0, sticky="w", padx=14, pady=(0, 4))
+    lbl_fondo_speed_val = ctk.CTkLabel(config, text="", font=ctk.CTkFont(size=12))
+    lbl_fondo_speed_val.grid(row=21, column=0, sticky="e", padx=14, pady=(0, 4))
+
+    def _update_fondo_speed(value=None):
+        val = float(value if value is not None else fondo_video_speed_var.get())
+        lbl_fondo_speed_val.configure(text=f"{val:.2f}x")
+
+    slider_fondo_speed = ctk.CTkSlider(
+        config,
+        from_=0.25,
+        to=2.0,
+        number_of_steps=35,
+        variable=fondo_video_speed_var,
+        command=lambda v: _update_fondo_speed(v),
+        width=220,
+    )
+    slider_fondo_speed.grid(row=22, column=0, sticky="w", padx=14, pady=(0, 12))
+    _update_fondo_speed()
+
+    intro_var = ctk.BooleanVar(value=bool(estado.get("intro_enabled", False)))
+    chk_intro = ctk.CTkCheckBox(
+        config,
+        text="Agregar intro (video)",
+        variable=intro_var,
+    )
+    chk_intro.grid(row=23, column=0, sticky="w", padx=14, pady=(0, 8))
+
+    row_intro = ctk.CTkFrame(config, fg_color="transparent")
+    row_intro.grid(row=24, column=0, sticky="ew", padx=14, pady=(0, 10))
+    row_intro.grid_columnconfigure(1, weight=1)
+
+    def seleccionar_intro():
+        from ui.dialogs import seleccionar_video
+        vid = seleccionar_video()
+        if vid:
+            estado["intro_path"] = vid
+            lbl_intro.configure(text=os.path.basename(vid))
+
+    btn_intro = ctk.CTkButton(
+        row_intro,
+        text="Seleccionar intro",
+        command=seleccionar_intro,
+        height=28,
+        width=150,
+    )
+    btn_intro.grid(row=0, column=0, sticky="w")
+
+    lbl_intro = ctk.CTkLabel(row_intro, text="(sin intro)", font=ctk.CTkFont(size=12))
+    lbl_intro.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    if estado.get("intro_path"):
+        lbl_intro.configure(text=os.path.basename(estado["intro_path"]))
+    if not modo_sin_bordes:
+        chk_intro.grid_remove()
+        row_intro.grid_remove()
+
     fondo_estilo_var = ctk.StringVar(value="Fill")
     lbl_estilo = ctk.CTkLabel(config, text="Estilo de fondo:", font=ctk.CTkFont(size=12))
-    lbl_estilo.grid(row=19, column=0, sticky="w", padx=14, pady=(0, 6))
+    lbl_estilo.grid(row=25, column=0, sticky="w", padx=14, pady=(0, 6))
 
     opt_estilo = ctk.CTkOptionMenu(
         config,
         values=["Fill", "Fit", "Blur"],
         variable=fondo_estilo_var,
     )
-    opt_estilo.grid(row=20, column=0, sticky="w", padx=14, pady=(0, 12))
+    opt_estilo.grid(row=26, column=0, sticky="w", padx=14, pady=(0, 12))
 
     row_fondo_escala = ctk.CTkFrame(config, fg_color="transparent")
-    row_fondo_escala.grid(row=21, column=0, sticky="ew", padx=14, pady=(0, 10))
+    row_fondo_escala.grid(row=27, column=0, sticky="ew", padx=14, pady=(0, 10))
     row_fondo_escala.grid_columnconfigure(1, weight=1)
 
     lbl_fondo_escala = ctk.CTkLabel(row_fondo_escala, text="Tamano video sobre fondo", font=ctk.CTkFont(size=12))
@@ -822,7 +969,7 @@ def create_tab(parent, context):
         pass
 
     row_recorte = ctk.CTkFrame(config, fg_color="transparent")
-    row_recorte.grid(row=22, column=0, sticky="ew", padx=14, pady=(0, 10))
+    row_recorte.grid(row=28, column=0, sticky="ew", padx=14, pady=(0, 10))
     row_recorte.grid_columnconfigure(1, weight=1)
 
     lbl_recorte = ctk.CTkLabel(row_recorte, text="Recorte total", font=ctk.CTkFont(size=12))
@@ -847,7 +994,7 @@ def create_tab(parent, context):
         font=ctk.CTkFont(size=12),
         text_color="#9aa4b2",
     )
-    hint_recorte.grid(row=23, column=0, sticky="w", padx=14, pady=(0, 12))
+    hint_recorte.grid(row=29, column=0, sticky="w", padx=14, pady=(0, 12))
     if modo_sin_bordes:
         row_recorte.grid_remove()
         hint_recorte.grid_remove()
@@ -863,42 +1010,42 @@ def create_tab(parent, context):
         lbl_margin_value.grid_remove()
         slider_margin.grid_remove()
     row_recorte_manual = ctk.CTkFrame(config, fg_color="transparent")
-    row_recorte_manual.grid(row=24, column=0, sticky="ew", padx=14, pady=(0, 10))
+    row_recorte_manual.grid(row=30, column=0, sticky="ew", padx=14, pady=(0, 10))
     row_recorte_manual.grid_columnconfigure(1, weight=1)
     row_recorte_manual.grid_columnconfigure(3, weight=1)
 
     lbl_recorte_top = ctk.CTkLabel(row_recorte_manual, text="Recorte Top", font=ctk.CTkFont(size=12))
     lbl_recorte_top.grid(row=0, column=0, sticky="w")
     entry_recorte_top = ctk.CTkEntry(row_recorte_manual, width=70)
-    entry_recorte_top.insert(0, f"{defaults.get('recorte_manual_top', 0.08):.2f}")
+    entry_recorte_top.insert(0, f"{float(defaults.get('recorte_manual_top', 0.08)) * 100:.1f}")
     entry_recorte_top.grid(row=0, column=1, sticky="w", padx=(6, 12))
 
     lbl_recorte_bottom = ctk.CTkLabel(row_recorte_manual, text="Recorte Bottom", font=ctk.CTkFont(size=12))
     lbl_recorte_bottom.grid(row=0, column=2, sticky="w")
     entry_recorte_bottom = ctk.CTkEntry(row_recorte_manual, width=70)
-    entry_recorte_bottom.insert(0, f"{defaults.get('recorte_manual_bottom', 0.08):.2f}")
+    entry_recorte_bottom.insert(0, f"{float(defaults.get('recorte_manual_bottom', 0.08)) * 100:.1f}")
     entry_recorte_bottom.grid(row=0, column=3, sticky="w", padx=(6, 0))
 
     hint_recorte_manual = ctk.CTkLabel(
         config,
-        text="Recorte manual en proporciÃ³n (0.05 - 0.25). Ej: 0.08",
+        text="Recorte manual en porcentaje (0 - 45). Ej: 25",
         font=ctk.CTkFont(size=12),
         text_color="#9aa4b2",
     )
-    hint_recorte_manual.grid(row=25, column=0, sticky="w", padx=14, pady=(0, 12))
+    hint_recorte_manual.grid(row=31, column=0, sticky="w", padx=14, pady=(0, 12))
     if not modo_sin_bordes:
         row_recorte_manual.grid_remove()
         hint_recorte_manual.grid_remove()
 
     row_inset = ctk.CTkFrame(config, fg_color="transparent")
-    row_inset.grid(row=26, column=0, sticky="ew", padx=14, pady=(0, 8))
+    row_inset.grid(row=32, column=0, sticky="ew", padx=14, pady=(0, 8))
     row_inset.grid_columnconfigure(1, weight=1)
 
     lbl_inset = ctk.CTkLabel(row_inset, text="Encuadre (porcentaje)", font=ctk.CTkFont(size=12))
     lbl_inset.grid(row=0, column=0, sticky="w")
 
     inset_frame = ctk.CTkFrame(config, fg_color="transparent")
-    inset_frame.grid(row=27, column=0, sticky="ew", padx=14, pady=(0, 10))
+    inset_frame.grid(row=33, column=0, sticky="ew", padx=14, pady=(0, 10))
     inset_frame.grid_columnconfigure(1, weight=1)
     inset_frame.grid_columnconfigure(3, weight=1)
 
@@ -982,7 +1129,7 @@ def create_tab(parent, context):
         inset_frame.grid_remove()
 
     cintas_card = ctk.CTkFrame(config, corner_radius=10)
-    cintas_card.grid(row=28, column=0, sticky="ew", padx=14, pady=(0, 10))
+    cintas_card.grid(row=34, column=0, sticky="ew", padx=14, pady=(0, 10))
     cintas_card.grid_columnconfigure(0, weight=1)
 
     cintas_enabled_var = tk.BooleanVar(value=True)
@@ -1089,7 +1236,7 @@ def create_tab(parent, context):
         cintas_card.grid_remove()
 
     msg_card = ctk.CTkFrame(config, corner_radius=10)
-    msg_card.grid(row=29, column=0, sticky="ew", padx=14, pady=(0, 10))
+    msg_card.grid(row=35, column=0, sticky="ew", padx=14, pady=(0, 10))
     msg_card.grid_columnconfigure(0, weight=1)
 
     mensajes_enabled_var = tk.BooleanVar(value=True)
@@ -1144,7 +1291,7 @@ def create_tab(parent, context):
         msg_card.grid_remove()
 
     bg_crop_card = ctk.CTkFrame(config, corner_radius=10)
-    bg_crop_card.grid(row=30, column=0, sticky="ew", padx=14, pady=(0, 10))
+    bg_crop_card.grid(row=36, column=0, sticky="ew", padx=14, pady=(0, 10))
     bg_crop_card.grid_columnconfigure(1, weight=1)
     lbl_bg_crop = ctk.CTkLabel(bg_crop_card, text="Recorte fondo (%)", font=ctk.CTkFont(size=12))
     lbl_bg_crop.grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
@@ -1170,7 +1317,7 @@ def create_tab(parent, context):
         text="Recortar bordes negros (mantener formato original)",
         variable=recorte_bordes_var,
     )
-    chk_recorte_bordes.grid(row=31, column=0, sticky="w", padx=14, pady=(0, 12))
+    chk_recorte_bordes.grid(row=37, column=0, sticky="w", padx=14, pady=(0, 12))
     if modo_sin_bordes:
         chk_recorte_bordes.configure(state="disabled")
         chk_recorte_bordes.grid_remove()

@@ -15,6 +15,7 @@ from ui.tabs import (
     overlay_imagenes_tab,
     musica_fondo_tab,
     corte_tab,
+    corte_zoom_tab,
     corte_visualizer_tab,
     drive_config_tab,
     ia_clips_tab,
@@ -28,6 +29,7 @@ from ui.tabs import (
     youtube_upload_tab,
     youtube_analytics_tab,
     instagram_tab,
+    quitar_fondo_tab,
 )
 
 
@@ -137,6 +139,7 @@ def iniciar_app(procesar_video_fn):
     tabs.add("Subtitulos")
     tabs.add("IA generadores")
     tabs.add("Descargas")
+    tabs.add("Quitar fondo video")
     tabs.add("Drive")
     tabs.add("YouTube")
     tabs.add("Analítica")
@@ -149,6 +152,7 @@ def iniciar_app(procesar_video_fn):
     tab_sub_main = tabs.tab("Subtitulos")
     tab_ia_main = tabs.tab("IA generadores")
     tab_desc_main = tabs.tab("Descargas")
+    tab_quitar_fondo = tabs.tab("Quitar fondo video")
     tab_drive_main = tabs.tab("Drive")
     tab_youtube_main = tabs.tab("YouTube")
     tab_instagram_main = tabs.tab("Instagram")
@@ -161,6 +165,7 @@ def iniciar_app(procesar_video_fn):
     corte_tabs.add("Corte editado")
     corte_tabs.add("Corte individual")
     corte_tabs.add("Corte sin bordes")
+    corte_tabs.add("Corte + Zoom")
     corte_tabs.add("Música")
     corte_tabs.add("Imágenes")
     corte_tabs.add("Visualizador")
@@ -185,6 +190,7 @@ def iniciar_app(procesar_video_fn):
     tab_corte = corte_tabs.tab("Corte editado")
     tab_ind = corte_tabs.tab("Corte individual")
     tab_sin_bordes = corte_tabs.tab("Corte sin bordes")
+    tab_zoom = corte_tabs.tab("Corte + Zoom")
     tab_musica = corte_tabs.tab("Música")
     tab_imagenes = corte_tabs.tab("Imágenes")
     tab_srt = sub_tabs.tab("Generar subtitulos")
@@ -247,6 +253,15 @@ def iniciar_app(procesar_video_fn):
         "titulo_seccion": "Corte sin bordes",
     })
 
+    corte_zoom_tab.create_tab(tab_zoom, {
+        "estado": estado,
+        "log": log,
+        "log_seccion": log_seccion,
+        "alerta_busy": alerta_busy,
+        "stop_control": stop_control,
+        "beep_fin": beep_fin,
+    })
+
     musica_fondo_tab.create_tab(tab_musica, {
         "estado": estado,
         "log": log,
@@ -255,6 +270,11 @@ def iniciar_app(procesar_video_fn):
 
     overlay_imagenes_tab.create_tab(tab_imagenes, {
         "estado": estado,
+        "log": log,
+        "log_global": log,
+    })
+
+    quitar_fondo_tab.create_tab(tab_quitar_fondo, {
         "log": log,
         "log_global": log,
     })

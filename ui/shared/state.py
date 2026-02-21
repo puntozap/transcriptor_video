@@ -1,12 +1,41 @@
 from core import stop_control
+from core.config_corte_zoom import get_corte_zoom_defaults
 
 
 def create_state():
+    zoom_defaults = get_corte_zoom_defaults()
     return {
         "estado": {
             "path": None,
             "es_audio": False,
             "fondo_path": None,
+            "fondo_video_path": None,
+            "fondo_video_loop": False,
+            "fondo_video_speed": 1.0,
+            "intro_enabled": False,
+            "intro_path": None,
+            "zoom_crop_top_pct": float(zoom_defaults.get("crop_top_pct", 25.0)),
+            "zoom_crop_bottom_pct": float(zoom_defaults.get("crop_bottom_pct", 25.0)),
+            "zoom_crop_left_pct": float(zoom_defaults.get("crop_left_pct", 0.0)),
+            "zoom_crop_right_pct": float(zoom_defaults.get("crop_right_pct", 0.0)),
+            "zoom_factor": float(zoom_defaults.get("zoom_factor", 1.0)),
+            "zoom_bg_enabled": bool(zoom_defaults.get("bg_enabled", False)),
+            "zoom_bg_video_path": None,
+            "zoom_cinta_enabled": bool(zoom_defaults.get("cinta_enabled", False)),
+            "zoom_cinta_left_pct": float(zoom_defaults.get("cinta_left_pct", 29.0)),
+            "zoom_cinta_top_pct": float(zoom_defaults.get("cinta_top_pct", 70.0)),
+            "zoom_cinta_width_pct": float(zoom_defaults.get("cinta_width_pct", 42.0)),
+            "zoom_cinta_height_pct": float(zoom_defaults.get("cinta_height_pct", 10.0)),
+            "zoom_cinta_bg_color": str(zoom_defaults.get("cinta_bg_color", "#000000")),
+            "zoom_cinta_border_color": str(zoom_defaults.get("cinta_border_color", "#F8BA11")),
+            "zoom_cinta_text_color": str(zoom_defaults.get("cinta_text_color", "#FFFFFF")),
+            "zoom_cinta_nombre": str(zoom_defaults.get("cinta_nombre", "Invitado")),
+            "zoom_cinta_rol": str(zoom_defaults.get("cinta_rol", "Rol / Profesión")),
+            "zoom_cinta_text_scale": float(zoom_defaults.get("cinta_text_scale", 1.0)),
+            "zoom_cinta_name_scale": float(zoom_defaults.get("cinta_name_scale", 0.65)),
+            "zoom_cinta_role_scale": float(zoom_defaults.get("cinta_role_scale", 0.45)),
+            "zoom_cinta_fontfile_name": str(zoom_defaults.get("cinta_fontfile_name", "C:\\Windows\\Fonts\\arialbd.ttf")),
+            "zoom_cinta_fontfile_role": str(zoom_defaults.get("cinta_fontfile_role", "C:\\Windows\\Fonts\\arial.ttf")),
             "visualizador": False,
             "posicion_visualizador": "centro",
             "visualizador_opacidad": 0.65,

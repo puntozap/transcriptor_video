@@ -3,7 +3,7 @@ DEFAULT_CORTE_CONFIG = {
     "recorte_manual_bottom": 0.25,
     "inset_left_pct": 0.0,
     "inset_right_pct": 4.0,
-    "inset_top_pct": 22.0,
+    "inset_top_pct": 24.0,
     "inset_bottom_pct": 8.0,
     "zoom": 1.05,
     "bg_crop_top_pct": 0.0,
@@ -14,7 +14,7 @@ DEFAULT_CINTAS_CONFIG = [
     {
         "lado": "izquierda",
         "left_pct": 0.0,
-        "top_pct": 73.0,
+        "top_pct": 70.0,
         "width_pct": 42.0,
         "height_pct": 10.0,
         "bg_color": "#000000",
@@ -28,7 +28,7 @@ DEFAULT_CINTAS_CONFIG = [
     {
         "lado": "derecha",
         "left_pct": 50.5,
-        "top_pct": 73.0,
+        "top_pct": 70.0,
         "width_pct": 42.0,
         "height_pct": 10.0,
         "bg_color": "#000000",
@@ -37,7 +37,7 @@ DEFAULT_CINTAS_CONFIG = [
         "fontfile_name": "C:\\Windows\\Fonts\\arialbd.ttf",
         "fontfile_role": "C:\\Windows\\Fonts\\arial.ttf",
         "nombre": "Roberto Ramírez Basterrechea",
-        "rol": "Host",
+        "rol": "Host / @gobernanzaciudadanadigital",
     },
 ]
 

@@ -7,6 +7,10 @@ from pathlib import Path
 from fractions import Fraction
 
 from core.instagram_auth import exchange_long_lived_token, token_expired
+from core.api_endpoints import get_primary_endpoint_url
+
+TRANSFER_TEMPLATE = get_primary_endpoint_url("transfer.sh upload")
+FILE_IO_URL = get_primary_endpoint_url("file.io upload")
 
 
 class InstagramUploader:
@@ -78,7 +82,7 @@ class InstagramUploader:
             log_fn("? IG: Error. El video no se proces? correctamente.")
         return None
 
-    def upload_reel_resumable(self, file_path: str, caption: str = "", share_to_feed: bool = True, log_fn=print, validate: bool = True, auto_fix: bool = True, chunk_size_mb: int | None = None):
+    def upload_reel_resumable(self, file_path: str, caption: str = "", share_to_feed: bool = True, log_fn=print, validate: bool = True, auto_fix: bool = True, chunk_size_mb: int | None = None, max_attempts: int = 6):
         """
         Sube un Reel usando carga resumible (rupload) sin depender de URLs p?blicas.
         Flujo:
@@ -99,27 +103,166 @@ class InstagramUploader:
                         return None
                 else:
                     return None
-        if log_fn:
-            log_fn("?? IG: Creando contenedor resumible...")
-        container_id, upload_uri = self._create_resumable_container(caption, share_to_feed, log_fn)
-        if not container_id or not upload_uri:
-            return None
-        if log_fn:
-            log_fn("?? IG: Subiendo archivo directamente a Instagram...")
-        if not self._upload_resumable_file(upload_uri, file_path, log_fn, chunk_size_mb=chunk_size_mb):
-            return None
-        if log_fn:
-            log_fn(f"? IG: Esperando procesamiento (ID: {container_id})...")
-        if self._wait_for_processing(container_id, log_fn=log_fn):
+
+        attempts = max(1, int(max_attempts or 1))
+        for attempt in range(1, attempts + 1):
             if log_fn:
-                log_fn("?? IG: Publicando Reel...")
-            media_id = self._publish_media(container_id, log_fn)
-            if media_id and log_fn:
-                log_fn(f"? IG: Reel publicado con ?xito (Media ID: {media_id})")
-            return media_id
-        if log_fn:
-            log_fn("? IG: Error. El video no se proces? correctamente.")
+                log_fn(f"?? IG: Intento {attempt}/{attempts} (resumable)...")
+                log_fn("?? IG: Creando contenedor resumible...")
+            container_id, upload_uri = self._create_resumable_container(caption, share_to_feed, log_fn)
+            if not container_id or not upload_uri:
+                if log_fn:
+                    log_fn("❌ IG: No se pudo crear contenedor resumible.")
+            else:
+                if log_fn:
+                    log_fn("?? IG: Subiendo archivo directamente a Instagram...")
+                if self._upload_resumable_file(upload_uri, file_path, log_fn, chunk_size_mb=chunk_size_mb):
+                    if log_fn:
+                        log_fn(f"? IG: Esperando procesamiento (ID: {container_id})...")
+                    if self._wait_for_processing(container_id, log_fn=log_fn):
+                        if log_fn:
+                            log_fn("?? IG: Publicando Reel...")
+                        media_id = self._publish_media(container_id, log_fn)
+                        if media_id and log_fn:
+                            log_fn(f"? IG: Reel publicado con ?xito (Media ID: {media_id})")
+                        return media_id
+                    if log_fn:
+                        log_fn("? IG: Error. El video no se proces? correctamente.")
+                else:
+                    if log_fn:
+                        log_fn("❌ IG: Fallo la subida resumible.")
+
+            if attempt < attempts:
+                wait_s = min(30, 2 * attempt)
+                if log_fn:
+                    log_fn(f"🔁 IG: Reintentando en {wait_s}s...")
+                time.sleep(wait_s)
+
         return None
+
+    def upload_story_video(self, video_url: str, log_fn=print, user_tags: list[dict] | None = None):
+        """
+        Publica un Story de video usando video_url.
+        """
+        self._ensure_token(log_fn=log_fn)
+        if log_fn:
+            log_fn("IG: Creando contenedor de Story (video)...")
+        container_id = self._create_story_container(video_url=video_url, log_fn=log_fn, user_tags=user_tags)
+        if not container_id:
+            return None
+        if log_fn:
+            log_fn(f"IG: Esperando procesamiento (ID: {container_id})...")
+        if not self._wait_for_processing(container_id, log_fn=log_fn):
+            if log_fn:
+                log_fn("IG: Error. El video no se procesó correctamente.")
+            return None
+        if log_fn:
+            log_fn("IG: Publicando Story (video)...")
+        media_id = self._publish_media(container_id, log_fn)
+        if media_id and log_fn:
+            log_fn(f"IG: Story publicada (Media ID: {media_id})")
+        return media_id
+
+    def upload_story_video_auto(self, video_url: str, log_fn=print, max_seconds: int = 60, user_tags: list[dict] | None = None):
+        """
+        Publica un Story de video. Si el video excede max_seconds, genera un clip y lo sube a una URL pública.
+        """
+        self._ensure_token(log_fn=log_fn)
+        duration = self._get_duration_seconds(video_url, log_fn=log_fn)
+        if duration is not None and duration <= max_seconds:
+            return self.upload_story_video(video_url, log_fn=log_fn, user_tags=user_tags)
+
+        if log_fn:
+            if duration is None:
+                log_fn("IG: No se pudo leer duración. Se intentará crear clip de Story.")
+            else:
+                log_fn(f"IG: Video supera {max_seconds}s ({duration:.2f}s). Creando clip para Story...")
+
+        clip_path = self._make_story_clip(video_url, max_seconds=max_seconds, log_fn=log_fn)
+        if not clip_path:
+            return None
+        public_url = self._upload_public_temp(clip_path, log_fn=log_fn)
+        if not public_url:
+            return None
+        return self.upload_story_video(public_url, log_fn=log_fn, user_tags=user_tags)
+
+    def upload_story_image(self, image_url: str, log_fn=print, user_tags: list[dict] | None = None):
+        """
+        Publica un Story de imagen usando image_url.
+        """
+        self._ensure_token(log_fn=log_fn)
+        if log_fn:
+            log_fn("IG: Creando contenedor de Story (imagen)...")
+        container_id = self._create_story_container(image_url=image_url, log_fn=log_fn, user_tags=user_tags)
+        if not container_id:
+            return None
+        if log_fn:
+            log_fn(f"IG: Esperando procesamiento (ID: {container_id})...")
+        if not self._wait_for_processing(container_id, log_fn=log_fn):
+            if log_fn:
+                log_fn("IG: Error. La imagen no se procesó correctamente.")
+            return None
+        if log_fn:
+            log_fn("IG: Publicando Story (imagen)...")
+        media_id = self._publish_media(container_id, log_fn)
+        if media_id and log_fn:
+            log_fn(f"IG: Story publicada (Media ID: {media_id})")
+        return media_id
+
+    def upload_image_post(self, image_url: str, caption: str = "", log_fn=print):
+        """
+        Publica una imagen en el feed (post simple) usando image_url.
+        """
+        self._ensure_token(log_fn=log_fn)
+        if log_fn:
+            log_fn("🖼️ IG: Creando contenedor de imagen...")
+        container_id = self._create_image_container(image_url, caption, log_fn=log_fn)
+        if not container_id:
+            return None
+        if log_fn:
+            log_fn("📤 IG: Publicando imagen...")
+        media_id = self._publish_media(container_id, log_fn)
+        if media_id and log_fn:
+            log_fn(f"✅ IG: Imagen publicada (Media ID: {media_id})")
+        return media_id
+
+    def upload_carousel_from_urls(self, image_urls: list[str], caption: str = "", log_fn=print):
+        """
+        Publica un carousel de imagenes (hasta 10) usando image_url.
+        """
+        self._ensure_token(log_fn=log_fn)
+        urls = [u for u in (image_urls or []) if u]
+        if not urls:
+            if log_fn:
+                log_fn("❌ IG: No hay URLs para carousel.")
+            return None
+        if len(urls) > 10:
+            urls = urls[:10]
+            if log_fn:
+                log_fn("⚠️ IG: Carousel limitado a 10 items. Se recorto la lista.")
+
+        item_ids = []
+        for idx, url in enumerate(urls, start=1):
+            if log_fn:
+                log_fn(f"🧩 IG: Creando item {idx}/{len(urls)}...")
+            item_id = self._create_image_container(url, caption="", log_fn=log_fn, is_carousel_item=True)
+            if not item_id:
+                if log_fn:
+                    log_fn(f"❌ IG: Fallo creando item {idx}.")
+                return None
+            item_ids.append(item_id)
+
+        if log_fn:
+            log_fn("🧩 IG: Creando contenedor carousel...")
+        parent_id = self._create_carousel_container(item_ids, caption, log_fn=log_fn)
+        if not parent_id:
+            return None
+        if log_fn:
+            log_fn("📤 IG: Publicando carousel...")
+        media_id = self._publish_media(parent_id, log_fn)
+        if media_id and log_fn:
+            log_fn(f"✅ IG: Carousel publicado (Media ID: {media_id})")
+        return media_id
 
     def _create_media_container(self, video_url, caption, share_to_feed, log_fn):
         url = f"{self.base_url}/{self.account_id}/media"
@@ -136,6 +279,62 @@ class InstagramUploader:
             return r.json().get("id")
         except Exception as e:
             self._log_error(e, "creando contenedor IG", log_fn)
+            return None
+
+    def _create_story_container(self, video_url: str | None = None, image_url: str | None = None, log_fn=None, user_tags: list[dict] | None = None):
+        url = f"{self.base_url}/{self.account_id}/media"
+        payload = {
+            "media_type": "STORIES",
+            "access_token": self.access_token,
+        }
+        if video_url:
+            payload["video_url"] = video_url
+        if image_url:
+            payload["image_url"] = image_url
+        if user_tags:
+            try:
+                payload["user_tags"] = json.dumps(user_tags)
+            except Exception:
+                payload["user_tags"] = user_tags
+        try:
+            r = requests.post(url, data=payload)
+            r.raise_for_status()
+            return r.json().get("id")
+        except Exception as e:
+            self._log_error(e, "creando contenedor Story IG", log_fn)
+            return None
+
+    def _create_image_container(self, image_url: str, caption: str, log_fn=None, is_carousel_item: bool = False):
+        url = f"{self.base_url}/{self.account_id}/media"
+        payload = {
+            "image_url": image_url,
+            "caption": caption,
+            "access_token": self.access_token,
+        }
+        if is_carousel_item:
+            payload["is_carousel_item"] = "true"
+        try:
+            r = requests.post(url, data=payload)
+            r.raise_for_status()
+            return r.json().get("id")
+        except Exception as e:
+            self._log_error(e, "creando contenedor de imagen IG", log_fn)
+            return None
+
+    def _create_carousel_container(self, children_ids: list[str], caption: str, log_fn=None):
+        url = f"{self.base_url}/{self.account_id}/media"
+        payload = {
+            "media_type": "CAROUSEL",
+            "children": ",".join(children_ids),
+            "caption": caption,
+            "access_token": self.access_token,
+        }
+        try:
+            r = requests.post(url, data=payload)
+            r.raise_for_status()
+            return r.json().get("id")
+        except Exception as e:
+            self._log_error(e, "creando contenedor carousel IG", log_fn)
             return None
 
     def _wait_for_processing(self, container_id, timeout=300, interval=10, log_fn=None):
@@ -451,5 +650,109 @@ class InstagramUploader:
         try:
             return float(Fraction(fps_raw))
         except Exception:
+            return None
+
+    def _get_duration_seconds(self, source: str, log_fn=print) -> float | None:
+        probe = self._ffprobe(source, log_fn=log_fn)
+        if not probe:
+            return None
+        fmt = probe.get("format", {})
+        raw = fmt.get("duration")
+        try:
+            return float(raw)
+        except Exception:
+            return None
+
+    def _make_story_clip(self, source: str, max_seconds: int = 60, log_fn=print) -> str | None:
+        try:
+            out_dir = Path("output") / "ig_story"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = f"story_{int(time.time())}.mp4"
+            out_path = out_dir / safe_name
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", str(source),
+                "-t", str(int(max_seconds)),
+                "-c:v", "libx264",
+                "-profile:v", "high",
+                "-level", "4.1",
+                "-pix_fmt", "yuv420p",
+                "-r", "30",
+                "-movflags", "+faststart",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-ar", "48000",
+                str(out_path),
+            ]
+            if log_fn:
+                log_fn("IG: Generando clip de Story con ffmpeg...")
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                if log_fn:
+                    log_fn("IG: Error creando clip de Story.")
+                    if result.stderr:
+                        log_fn(result.stderr.strip()[:800])
+                return None
+            if log_fn:
+                log_fn(f"IG: Clip listo: {out_path}")
+            return str(out_path)
+        except Exception as e:
+            if log_fn:
+                log_fn(f"IG: Error creando clip de Story: {e}")
+            return None
+
+    def _upload_public_temp(self, path: str, log_fn=print, max_attempts: int = 3) -> str | None:
+        try:
+            file_path = Path(path)
+            if not file_path.exists():
+                if log_fn:
+                    log_fn(f"IG: Archivo no encontrado para subir: {path}")
+                return None
+            last_exc = None
+            for attempt in range(1, max_attempts + 1):
+                if log_fn:
+                    log_fn(f"IG: Subiendo clip a transfer.sh (intento {attempt}/{max_attempts})...")
+                try:
+                    url = TRANSFER_TEMPLATE.format(filename=file_path.name)
+                    with file_path.open("rb") as source:
+                        response = requests.put(url, data=source, timeout=120)
+                    response.raise_for_status()
+                    link = response.text.strip()
+                    if link:
+                        if log_fn:
+                            log_fn(f"IG: URL pública obtenida: {link}")
+                        return link
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < max_attempts:
+                        if log_fn:
+                            log_fn(f"IG: transfer.sh falló: {exc}. Reintentando...")
+                        time.sleep(1)
+                        continue
+                    if log_fn:
+                        log_fn(f"IG: transfer.sh falló: {exc}. Probando file.io...")
+            # fallback file.io
+            with file_path.open("rb") as source:
+                response = requests.post(FILE_IO_URL, files={"file": (file_path.name, source)}, timeout=120)
+            response.raise_for_status()
+            try:
+                payload = response.json()
+            except Exception:
+                preview = (response.text or "").strip().replace("\n", " ")[:240]
+                if log_fn:
+                    log_fn(f"IG: file.io respuesta no-JSON: {preview}")
+                return None
+            link = payload.get("link") or (payload.get("data") or {}).get("link") or payload.get("url")
+            if not link:
+                if log_fn:
+                    log_fn("IG: file.io no devolvió URL.")
+                return None
+            if log_fn:
+                log_fn(f"IG: URL pública obtenida de file.io: {link}")
+            return link
+        except Exception as e:
+            if log_fn:
+                log_fn(f"IG: Error subiendo clip a URL pública: {e}")
             return None
 
