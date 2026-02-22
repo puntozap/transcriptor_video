@@ -165,16 +165,26 @@ class InstagramUploader:
 
     def upload_story_video_auto(self, video_url: str, log_fn=print, max_seconds: int = 60, user_tags: list[dict] | None = None):
         """
-        Publica un Story de video. Si el video excede max_seconds, genera un clip y lo sube a una URL pública.
+        Publica un Story de video. Si el video excede max_seconds y es archivo local,
+        genera un clip y lo sube a una URL publica. Si es URL, no sube a terceros.
         """
         self._ensure_token(log_fn=log_fn)
         duration = self._get_duration_seconds(video_url, log_fn=log_fn)
         if duration is not None and duration <= max_seconds:
             return self.upload_story_video(video_url, log_fn=log_fn, user_tags=user_tags)
 
+        is_url = str(video_url).lower().startswith("http")
+        if is_url:
+            if log_fn:
+                if duration is None:
+                    log_fn("IG: No se pudo leer duracion. Se intentara publicar el link tal cual.")
+                else:
+                    log_fn(f"IG: Video supera {max_seconds}s ({duration:.2f}s). Se intentara publicar el link tal cual.")
+            return self.upload_story_video(video_url, log_fn=log_fn, user_tags=user_tags)
+
         if log_fn:
             if duration is None:
-                log_fn("IG: No se pudo leer duración. Se intentará crear clip de Story.")
+                log_fn("IG: No se pudo leer duracion. Se intentara crear clip de Story.")
             else:
                 log_fn(f"IG: Video supera {max_seconds}s ({duration:.2f}s). Creando clip para Story...")
 
@@ -228,40 +238,67 @@ class InstagramUploader:
 
     def upload_carousel_from_urls(self, image_urls: list[str], caption: str = "", log_fn=print):
         """
-        Publica un carousel de imagenes (hasta 10) usando image_url.
+        Publica un carousel mixto (imagenes y videos, hasta 10) usando URLs.
+        Deteccion: por extension del URL o por prefijo "image|" / "video|".
         """
         self._ensure_token(log_fn=log_fn)
         urls = [u for u in (image_urls or []) if u]
         if not urls:
             if log_fn:
-                log_fn("❌ IG: No hay URLs para carousel.")
+                log_fn("? IG: No hay URLs para carousel.")
             return None
         if len(urls) > 10:
             urls = urls[:10]
             if log_fn:
-                log_fn("⚠️ IG: Carousel limitado a 10 items. Se recorto la lista.")
+                log_fn("?? IG: Carousel limitado a 10 items. Se recorto la lista.")
+
+        def _detect_kind(raw_url: str) -> tuple[str, str]:
+            url = (raw_url or "").strip()
+            lower = url.lower()
+            if lower.startswith("video|"):
+                return "video", url.split("|", 1)[1].strip()
+            if lower.startswith("image|"):
+                return "image", url.split("|", 1)[1].strip()
+            for ext in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"):
+                if lower.endswith(ext) or ext in lower.split("?")[0]:
+                    return "video", url
+            return "image", url
 
         item_ids = []
-        for idx, url in enumerate(urls, start=1):
+        for idx, raw_url in enumerate(urls, start=1):
             if log_fn:
-                log_fn(f"🧩 IG: Creando item {idx}/{len(urls)}...")
-            item_id = self._create_image_container(url, caption="", log_fn=log_fn, is_carousel_item=True)
+                log_fn(f"?? IG: Creando item {idx}/{len(urls)}...")
+            kind, url = _detect_kind(raw_url)
+            if not url:
+                if log_fn:
+                    log_fn(f"? IG: URL vacia en item {idx}.")
+                return None
+            if kind == "video":
+                item_id = self._create_video_container(url, caption="", log_fn=log_fn, is_carousel_item=True)
+                if item_id and log_fn:
+                    log_fn(f"?? IG: Esperando procesamiento del video item {idx}...")
+                if item_id and not self._wait_for_processing(item_id, log_fn=log_fn):
+                    if log_fn:
+                        log_fn(f"? IG: Video item {idx} no se proceso.")
+                    return None
+            else:
+                item_id = self._create_image_container(url, caption="", log_fn=log_fn, is_carousel_item=True)
             if not item_id:
                 if log_fn:
-                    log_fn(f"❌ IG: Fallo creando item {idx}.")
+                    log_fn(f"? IG: Fallo creando item {idx}.")
                 return None
             item_ids.append(item_id)
 
         if log_fn:
-            log_fn("🧩 IG: Creando contenedor carousel...")
+            log_fn("?? IG: Creando contenedor carousel...")
         parent_id = self._create_carousel_container(item_ids, caption, log_fn=log_fn)
         if not parent_id:
             return None
         if log_fn:
-            log_fn("📤 IG: Publicando carousel...")
+            log_fn("?? IG: Publicando carousel...")
         media_id = self._publish_media(parent_id, log_fn)
         if media_id and log_fn:
-            log_fn(f"✅ IG: Carousel publicado (Media ID: {media_id})")
+            log_fn(f"? IG: Carousel publicado (Media ID: {media_id})")
         return media_id
 
     def _create_media_container(self, video_url, caption, share_to_feed, log_fn):
@@ -319,6 +356,24 @@ class InstagramUploader:
             return r.json().get("id")
         except Exception as e:
             self._log_error(e, "creando contenedor de imagen IG", log_fn)
+            return None
+
+    def _create_video_container(self, video_url: str, caption: str, log_fn=None, is_carousel_item: bool = False):
+        url = f"{self.base_url}/{self.account_id}/media"
+        payload = {
+            "media_type": "VIDEO",
+            "video_url": video_url,
+            "caption": caption,
+            "access_token": self.access_token,
+        }
+        if is_carousel_item:
+            payload["is_carousel_item"] = "true"
+        try:
+            r = requests.post(url, data=payload)
+            r.raise_for_status()
+            return r.json().get("id")
+        except Exception as e:
+            self._log_error(e, "creando contenedor de video IG", log_fn)
             return None
 
     def _create_carousel_container(self, children_ids: list[str], caption: str, log_fn=None):

@@ -304,51 +304,51 @@ def create_tab(parent, context):
         if not estado.get("path"):
             _log("Selecciona un video primero.")
             return
-            if not overlays and not outro_var.get():
-                _log("Agrega al menos una imagen o activa la imagen final.")
-                return
+        if not overlays and not outro_var.get():
+            _log("Agrega al menos una imagen o activa la imagen final.")
+            return
 
-            items = []
-            if overlays:
-                for item in overlays:
-                    img = item.get("image")
-                    if not img or not os.path.exists(img):
-                        _log("Hay una imagen sin seleccionar.")
-                        return
-                    try:
-                        start = parse_time_optional(item["start"].get()) or 0.0
-                    except Exception as exc:
-                        _log(f"Inicio invalido: {exc}")
-                        return
-                    try:
-                        end = parse_time_optional(item["end"].get())
-                    except Exception as exc:
-                        _log(f"Fin invalido: {exc}")
-                        return
-                    if end is None or end <= start:
-                        _log("El fin debe ser mayor que el inicio.")
-                        return
-                    try:
-                        zoom = float(item["slider_zoom"].get())
-                    except Exception:
-                        zoom = 1.0
-                    items.append((img, start, end, zoom))
-
-            outro_img = None
-            outro_dur = 0.0
-            if outro_var.get():
-                outro_img = outro_state.get("image")
-                if not outro_img or not os.path.exists(outro_img):
-                    _log("Selecciona una imagen final.")
+        items = []
+        if overlays:
+            for item in overlays:
+                img = item.get("image")
+                if not img or not os.path.exists(img):
+                    _log("Hay una imagen sin seleccionar.")
                     return
                 try:
-                    outro_dur = float(parse_time_optional(entry_outro_dur.get()) or 0.0)
+                    start = parse_time_optional(item["start"].get()) or 0.0
                 except Exception as exc:
-                    _log(f"Duracion final invalida: {exc}")
+                    _log(f"Inicio invalido: {exc}")
                     return
-                if outro_dur <= 0:
-                    _log("La duracion final debe ser mayor a 0.")
+                try:
+                    end = parse_time_optional(item["end"].get())
+                except Exception as exc:
+                    _log(f"Fin invalido: {exc}")
                     return
+                if end is None or end <= start:
+                    _log("El fin debe ser mayor que el inicio.")
+                    return
+                try:
+                    zoom = float(item["slider_zoom"].get())
+                except Exception:
+                    zoom = 1.0
+                items.append((img, start, end, zoom))
+
+        outro_img = None
+        outro_dur = 0.0
+        if outro_var.get():
+            outro_img = outro_state.get("image")
+            if not outro_img or not os.path.exists(outro_img):
+                _log("Selecciona una imagen final.")
+                return
+            try:
+                outro_dur = float(parse_time_optional(entry_outro_dur.get()) or 0.0)
+            except Exception as exc:
+                _log(f"Duracion final invalida: {exc}")
+                return
+            if outro_dur <= 0:
+                _log("La duracion final debe ser mayor a 0.")
+                return
 
         video_path = estado["path"]
         base_dir = os.path.join(output_base_dir(video_path), "imagenes")
@@ -357,41 +357,41 @@ def create_tab(parent, context):
         out_path = os.path.join(base_dir, f"{base_name}_imagenes.mp4")
 
         def run_apply():
-                try:
-                    current = video_path
-                    for idx, (img, start, end, zoom) in enumerate(items, start=1):
-                        temp_out = out_path if (idx == len(items) and not outro_var.get()) else os.path.join(base_dir, f"{base_name}_tmp_{idx:02d}.mp4")
-                        overlay_image_temporizada(
-                            current,
-                            img,
-                            temp_out,
-                            start_sec=start,
-                            duration=end - start,
-                            zoom=zoom,
-                            log_fn=_log,
-                        )
-                        if current != video_path:
-                            try:
-                                os.remove(current)
-                            except Exception:
-                                pass
-                        current = temp_out
-                    if outro_var.get():
-                        append_image_outro(
-                            current,
-                            outro_img,
-                            out_path,
-                            duration=outro_dur,
-                            log_fn=_log,
-                        )
-                        if current != video_path and current != out_path:
-                            try:
-                                os.remove(current)
-                            except Exception:
-                                pass
-                    _log(f"Video con imagenes listo: {out_path}")
-                except Exception as exc:
-                    _log(f"Error aplicando imagenes: {exc}")
+            try:
+                current = video_path
+                for idx, (img, start, end, zoom) in enumerate(items, start=1):
+                    temp_out = out_path if (idx == len(items) and not outro_var.get()) else os.path.join(base_dir, f"{base_name}_tmp_{idx:02d}.mp4")
+                    overlay_image_temporizada(
+                        current,
+                        img,
+                        temp_out,
+                        start_sec=start,
+                        duration=end - start,
+                        zoom=zoom,
+                        log_fn=_log,
+                    )
+                    if current != video_path:
+                        try:
+                            os.remove(current)
+                        except Exception:
+                            pass
+                    current = temp_out
+                if outro_var.get():
+                    append_image_outro(
+                        current,
+                        outro_img,
+                        out_path,
+                        duration=outro_dur,
+                        log_fn=_log,
+                    )
+                    if current != video_path and current != out_path:
+                        try:
+                            os.remove(current)
+                        except Exception:
+                            pass
+                _log(f"Video con imagenes listo: {out_path}")
+            except Exception as exc:
+                _log(f"Error aplicando imagenes: {exc}")
 
         threading.Thread(target=run_apply, daemon=True).start()
 
