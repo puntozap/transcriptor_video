@@ -104,7 +104,7 @@ class VisualOverlayPreview:
             )
         draw.rectangle([28, 30, width - 28, height - 60], outline=(255, 255, 255, 40), width=2)
         draw.text((width / 2, 36), f"Modo: {blend_mode.title()}", fill="#d3d6ff", anchor="ma")
-        self._photo = ImageTk.PhotoImage(combined)
+        self._photo = ImageTk.PhotoImage(combined, master=self.label)
         self.label.configure(image=self._photo, text="")
 
 
@@ -371,7 +371,10 @@ def create_tab(parent, context):
     preview_container.grid_columnconfigure(0, weight=1)
 
     preview = VisualOverlayPreview(preview_container)
-    refresh_preview()
+    try:
+        parent.after(100, refresh_preview)
+    except Exception:
+        refresh_preview()
 
     btn_apply = ctk.CTkButton(
         right_panel,
