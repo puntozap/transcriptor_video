@@ -100,6 +100,11 @@ EXTERNAL_API_ENDPOINTS = [
             "https://open.tiktokapis.com/v2/post/publish/video/init/",
         ],
     },
+    {
+        "name": "TikTok creator info",
+        "description": "Consulta info del creador (privacy options, limits) para publicar directo.",
+        "url": "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+    },
 ]
 
 

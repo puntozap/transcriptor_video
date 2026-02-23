@@ -11,6 +11,7 @@ from core.tiktok_api import (
     init_upload_inbox,
     init_upload_direct,
     upload_video,
+    query_creator_info,
 )
 from ui.shared import helpers
 
@@ -75,7 +76,7 @@ def create_tab(parent, context):
     )
     setup_text = (
         "1) App en TikTok Developers con Content Posting API habilitada.\n"
-        "2) Redirect URI autorizado: http://127.0.0.1:8765/callback\n"
+        "2) Redirect URI autorizado: http://127.0.0.1:8766/callback\n"
         "3) Client Key y Client Secret de la app.\n"
         "4) Scopes recomendados: video.upload, video.publish\n"
     )
@@ -103,7 +104,7 @@ def create_tab(parent, context):
     lbl_redirect.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 6))
     entry_redirect = ctk.CTkEntry(auth_card)
     entry_redirect.grid(row=2, column=1, sticky="ew", padx=12, pady=(0, 6))
-    entry_redirect.insert(0, "http://127.0.0.1:8765/callback")
+    entry_redirect.insert(0, "http://127.0.0.1:8766/callback")
 
     lbl_scopes = ctk.CTkLabel(auth_card, text="Scopes", font=ctk.CTkFont(size=12))
     lbl_scopes.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 12))
@@ -115,10 +116,10 @@ def create_tab(parent, context):
     lbl_status = ctk.CTkLabel(auth_card, textvariable=status_var, font=ctk.CTkFont(size=12))
     lbl_status.grid(row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 12))
 
-    pkce_var = ctk.BooleanVar(value=False)
+    pkce_var = ctk.BooleanVar(value=True)
     chk_pkce = ctk.CTkCheckBox(
         auth_card,
-        text="Usar PKCE (si falla, desactivar)",
+        text="Usar PKCE (requerido por TikTok)",
         variable=pkce_var,
     )
     chk_pkce.grid(row=5, column=0, sticky="w", padx=12, pady=(0, 12))
@@ -155,12 +156,18 @@ def create_tab(parent, context):
 
         def run_login():
             try:
+                try:
+                    btn_connect.configure(state="disabled")
+                    btn_refresh.configure(state="disabled")
+                except Exception:
+                    pass
                 tokens = oauth_login_flow(
                     client_key,
                     client_secret,
                     redirect_uri,
                     scopes,
                     use_pkce=pkce_var.get(),
+                    ignore_state_mismatch=True,
                     log_fn=log,
                     timeout_sec=600,
                 )
@@ -172,6 +179,11 @@ def create_tab(parent, context):
             except Exception as e:
                 log(f"Error OAuth: {e}")
             finally:
+                try:
+                    btn_connect.configure(state="normal")
+                    btn_refresh.configure(state="normal")
+                except Exception:
+                    pass
                 stop_control.set_busy(False)
 
         threading.Thread(target=run_login, daemon=True).start()
@@ -207,6 +219,11 @@ def create_tab(parent, context):
             except Exception as e:
                 log(f"Error refresh: {e}")
             finally:
+                try:
+                    btn_connect.configure(state="normal")
+                    btn_refresh.configure(state="normal")
+                except Exception:
+                    pass
                 stop_control.set_busy(False)
 
         threading.Thread(target=run_refresh, daemon=True).start()
@@ -266,7 +283,7 @@ def create_tab(parent, context):
     lbl_priv = ctk.CTkLabel(upload_card, text="Privacidad", font=ctk.CTkFont(size=12))
     lbl_priv.grid(row=4, column=0, sticky="w", padx=12, pady=(0, 6))
     priv_var = ctk.StringVar(value="PUBLIC")
-    opt_priv = ctk.CTkOptionMenu(upload_card, values=["PUBLIC", "FRIENDS", "PRIVATE"], variable=priv_var)
+    opt_priv = ctk.CTkOptionMenu(upload_card, values=["PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE"], variable=priv_var)
     opt_priv.grid(row=4, column=1, sticky="w", padx=12, pady=(0, 6))
 
     disable_comment_var = ctk.BooleanVar(value=False)
@@ -312,13 +329,28 @@ def create_tab(parent, context):
                 if mode.startswith("Inbox"):
                     log("Inicializando upload Inbox...")
                     init_data = init_upload_inbox(access_token, video_state["path"])
+                    log(f"Init inbox response: {init_data}")
                 else:
                     log("Inicializando upload Directo...")
+                    creator_info = query_creator_info(access_token)
+                    log(f"Creator info: {creator_info}")
+                    privacy_options = creator_info.get("privacy_level_options") or []
+                    privacy_map = {
+                        "PUBLIC": "PUBLIC_TO_EVERYONE",
+                        "FOLLOWERS": "FOLLOWER_OF_CREATOR",
+                        "FRIENDS": "MUTUAL_FOLLOW_FRIENDS",
+                        "PRIVATE": "SELF_ONLY",
+                    }
+                    desired = privacy_map.get(priv_var.get(), priv_var.get())
+                    if privacy_options:
+                        if desired not in privacy_options:
+                            log(f"Privacidad '{desired}' no disponible. Usando: {privacy_options[0]}")
+                            desired = privacy_options[0]
                     init_data = init_upload_direct(
                         access_token,
                         video_state["path"],
                         entry_caption.get().strip(),
-                        priv_var.get(),
+                        desired,
                         disable_comment_var.get(),
                         disable_duet_var.get(),
                         disable_stitch_var.get(),
@@ -336,6 +368,11 @@ def create_tab(parent, context):
             except Exception as e:
                 log(f"Error al subir: {e}")
             finally:
+                try:
+                    btn_connect.configure(state="normal")
+                    btn_refresh.configure(state="normal")
+                except Exception:
+                    pass
                 stop_control.set_busy(False)
 
         threading.Thread(target=run_upload, daemon=True).start()

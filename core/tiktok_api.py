@@ -11,10 +11,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
 
-from core.api_endpoints import get_all_endpoint_urls
+from core.api_endpoints import get_all_endpoint_urls, get_primary_endpoint_url
 
 AUTH_URL, TOKEN_URL = get_all_endpoint_urls("TikTok OAuth")
 INBOX_INIT_URL, DIRECT_INIT_URL = get_all_endpoint_urls("TikTok upload init")
+CREATOR_INFO_URL = get_primary_endpoint_url("TikTok creator info")
 TOKENS_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "output", "tiktok_tokens.json"))
 
 
@@ -26,9 +27,14 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def make_pkce_pair() -> tuple[str, str]:
-    verifier = secrets.token_urlsafe(32)
-    challenge = _b64url(hashlib.sha256(verifier.encode("ascii")).digest())
+def make_pkce_pair(length: int = 64) -> tuple[str, str]:
+    # TikTok Desktop Login Kit requires HEX-encoded SHA256 for code_challenge.
+    # Verifier must be 43-128 chars using unreserved characters.
+    if length < 43 or length > 128:
+        raise ValueError("PKCE verifier length must be between 43 and 128.")
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    verifier = "".join(secrets.choice(alphabet) for _ in range(length))
+    challenge = hashlib.sha256(verifier.encode("ascii")).hexdigest()
     return verifier, challenge
 
 
@@ -160,7 +166,7 @@ class _OAuthHandler(BaseHTTPRequestHandler):
         return
 
 
-def wait_for_oauth_code(redirect_uri: str, expected_state: str, timeout_sec: int = 300) -> str:
+def wait_for_oauth_code(redirect_uri: str, expected_state: str, timeout_sec: int = 300, ignore_state_mismatch: bool = False) -> str:
     parsed = urllib.parse.urlparse(redirect_uri)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 80
@@ -184,8 +190,13 @@ def wait_for_oauth_code(redirect_uri: str, expected_state: str, timeout_sec: int
             raise RuntimeError(f"OAuth error: {server.oauth_error}")
         if server.oauth_code:
             if expected_state and server.oauth_state != expected_state:
-                server.running = False
-                raise RuntimeError(f"State OAuth no coincide. Recibido: {server.oauth_state}, Esperado: {expected_state}")
+                if not ignore_state_mismatch:
+                    server.running = False
+                    raise RuntimeError(f"State OAuth no coincide. Recibido: {server.oauth_state}, Esperado: {expected_state}")
+                # Ignora callbacks de sesiones anteriores y sigue esperando
+                server.oauth_code = None
+                server.oauth_state = None
+                continue
             server.running = False
             return server.oauth_code
         time.sleep(0.2)
@@ -201,6 +212,7 @@ def oauth_login_flow(
     use_pkce: bool = False,
     log_fn=None,
     timeout_sec: int = 300,
+    ignore_state_mismatch: bool = False,
 ) -> dict:
     state = secrets.token_urlsafe(16)
     verifier = None
@@ -211,7 +223,7 @@ def oauth_login_flow(
     if log_fn:
         log_fn("Abriendo navegador para autorizar TikTok...")
     webbrowser.open(auth_url)
-    code = wait_for_oauth_code(redirect_uri, state, timeout_sec=timeout_sec)
+    code = wait_for_oauth_code(redirect_uri, state, timeout_sec=timeout_sec, ignore_state_mismatch=ignore_state_mismatch)
     if log_fn:
         log_fn("Codigo OAuth recibido. Intercambiando por token...")
     tokens = exchange_code_for_token(client_key, client_secret, code, redirect_uri, verifier)
@@ -275,9 +287,10 @@ def init_upload_inbox(access_token: str, video_path: str) -> dict:
 def init_upload_direct(access_token: str, video_path: str, caption: str, privacy: str, disable_comment: bool, disable_duet: bool, disable_stitch: bool) -> dict:
     size = os.path.getsize(video_path)
     chunk_size, total = _compute_chunks(size)
+    safe_caption = caption.strip() if caption and caption.strip() else "Video"
     payload = {
         "post_info": {
-            "title": caption or "",
+            "title": safe_caption,
             "privacy_level": privacy,
             "disable_comment": bool(disable_comment),
             "disable_duet": bool(disable_duet),
@@ -292,6 +305,12 @@ def init_upload_direct(access_token: str, video_path: str, caption: str, privacy
     }
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     data = _request_json("POST", DIRECT_INIT_URL, json=payload, headers=headers)
+    return data.get("data", data)
+
+
+def query_creator_info(access_token: str) -> dict:
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    data = _request_json("POST", CREATOR_INFO_URL, json={}, headers=headers)
     return data.get("data", data)
 
 

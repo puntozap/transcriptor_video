@@ -29,6 +29,7 @@ from ui.tabs import (
     youtube_upload_tab,
     youtube_analytics_tab,
     instagram_tab,
+    tiktok_upload_tab,
     image_creator_tab,
 )
 
@@ -148,6 +149,7 @@ def iniciar_app(procesar_video_fn, root=None):
     tabs.add("Creador de Imagenes")
     tabs.add("Drive")
     tabs.add("YouTube")
+    tabs.add("TikTok")
     tabs.add("Analítica")
     tabs.add("Instagram")
     tabs.add("WhatsApp")
@@ -161,6 +163,7 @@ def iniciar_app(procesar_video_fn, root=None):
     tab_image_creator = tabs.tab("Creador de Imagenes")
     tab_drive_main = tabs.tab("Drive")
     tab_youtube_main = tabs.tab("YouTube")
+    tab_tiktok_main = tabs.tab("TikTok")
     tab_instagram_main = tabs.tab("Instagram")
     tab_whatsapp_main = tabs.tab("WhatsApp")
     tab_act = tabs.tab("Actividad")
@@ -510,6 +513,19 @@ def iniciar_app(procesar_video_fn, root=None):
         })
         loaded_tabs.add("instagram")
 
+    def ensure_tiktok():
+        if "tiktok" in loaded_tabs:
+            return
+        tiktok_upload_tab.create_tab(tab_tiktok_main, {
+            "log": log,
+            "log_global": log,
+            "stop_control": stop_control,
+            "alerta_busy": alerta_busy,
+            "beep_fin": beep_fin,
+            "renombrar_si_largo": renombrar_si_largo,
+        })
+        loaded_tabs.add("tiktok")
+
     def ensure_activity():
         if "activity" in loaded_tabs:
             return
@@ -549,6 +565,8 @@ def iniciar_app(procesar_video_fn, root=None):
             ensure_drive()
         elif tab_name == "YouTube":
             ensure_youtube_upload()
+        elif tab_name == "TikTok":
+            ensure_tiktok()
         elif tab_name == "Anal?tica":
             ensure_analytics()
         elif tab_name == "Instagram":
@@ -596,11 +614,11 @@ def iniciar_app(procesar_video_fn, root=None):
         elif tab_name == "YouTube MP4":
             ensure_youtube_mp4()
 
-    tabs.configure(command=on_main_tab_change)
-    corte_tabs.configure(command=on_corte_tab_change)
-    sub_tabs.configure(command=on_sub_tab_change)
-    ia_tabs.configure(command=on_ia_tab_change)
-    desc_tabs.configure(command=on_desc_tab_change)
+    tabs.configure(command=lambda: on_main_tab_change(tabs.get()))
+    corte_tabs.configure(command=lambda: on_corte_tab_change(corte_tabs.get()))
+    sub_tabs.configure(command=lambda: on_sub_tab_change(sub_tabs.get()))
+    ia_tabs.configure(command=lambda: on_ia_tab_change(ia_tabs.get()))
+    desc_tabs.configure(command=lambda: on_desc_tab_change(desc_tabs.get()))
 
     try:
         on_corte_tab_change(corte_tabs.get())
