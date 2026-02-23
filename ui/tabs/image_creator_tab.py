@@ -72,10 +72,17 @@ def create_tab(parent, context):
     tab_vert = tabview.add("Imagen vertical")
     tab_horz = tabview.add("Imagen horizontal")
 
-    _build_creator(tab_vert, state["vertical"], (1080, 1920), "vertical", log)
-    _build_creator(tab_horz, state["horizontal"], (1280, 720), "horizontal", log)
+    vert_api = _build_creator(tab_vert, state["vertical"], (1080, 1920), "vertical", log)
+    horz_api = _build_creator(tab_horz, state["horizontal"], (1280, 720), "horizontal", log)
 
-    return {}
+    def _ensure_fonts_loaded():
+        for api in (vert_api, horz_api):
+            if api and "ensure_fonts_loaded" in api:
+                api["ensure_fonts_loaded"]()
+
+    return {
+        "ensure_fonts_loaded": _ensure_fonts_loaded,
+    }
 
 
 def _build_creator(parent, settings, size, variant, log):
@@ -145,6 +152,22 @@ def _build_creator(parent, settings, size, variant, log):
 
     preview_state = {"image": None}
     render_state = {"running": False}
+    ui_ready = {"value": False}
+    entry_top_text = None
+    entry_top_text2 = None
+    entry_title = None
+    entry_name_text = None
+    entry_top_color = None
+    entry_top_bg = None
+    entry_top2_color = None
+    entry_top2_bg = None
+    entry_title_color = None
+    entry_name_color = None
+    entry_filter = None
+
+    def _clear_children(frame):
+        for child in frame.winfo_children():
+            child.destroy()
 
 
     def _apply_preset(preset_idx: int):
@@ -165,6 +188,22 @@ def _build_creator(parent, settings, size, variant, log):
         lbl_preset.configure(text=preset["name"])
         
     def _sync_all_inputs():
+        if not ui_ready["value"]:
+            return
+        if not all([
+            entry_top_text,
+            entry_top_text2,
+            entry_title,
+            entry_name_text,
+            entry_top_color,
+            entry_top_bg,
+            entry_top2_color,
+            entry_top2_bg,
+            entry_title_color,
+            entry_name_color,
+            entry_filter,
+        ]):
+            return
         settings["top_text"] = entry_top_text.get("1.0", "end").strip()
         settings["top_text_2"] = entry_top_text2.get("1.0", "end").strip()
         settings["title_text"] = entry_title.get("1.0", "end").strip()
@@ -208,6 +247,8 @@ def _build_creator(parent, settings, size, variant, log):
             render_state["running"] = False
 
     def _trigger_preview():
+        if not ui_ready["value"]:
+            return
         threading.Thread(target=_render_preview, daemon=True).start()
 
     def _export_images():
@@ -391,142 +432,180 @@ def _build_creator(parent, settings, size, variant, log):
     row = _add_slider(row, "Altura (%)", "main_height_pct", 0.2, 0.9, 0.01)
     row = _add_slider(row, "Rotacion imagen", "main_rotation", 0.0, 360.0, 1.0)
 
-    # Fuentes
-    ctk.CTkLabel(options, text="Fuentes", font=ctk.CTkFont(size=13, weight="bold")).grid(
-        row=row, column=0, sticky="w", padx=12, pady=(8, 6)
-    )
+    # Fuentes (carga diferida)
+    fonts_container = ctk.CTkFrame(options, fg_color="transparent")
+    fonts_container.grid(row=row, column=0, sticky="ew", padx=12, pady=(6, 8))
+    fonts_container.grid_columnconfigure(0, weight=1)
     row += 1
 
-    font_files = _get_font_files()
-    font_names = [os.path.basename(p) for p in font_files] if font_files else ["arial.ttf"]
+    fonts_state = {"loaded": False, "refreshes": 0}
 
-    current_bold = settings.get("font_bold") or ""
-    current_regular = settings.get("font_regular") or ""
+    def _build_fonts_section():
+        _clear_children(fonts_container)
+        row_f = 0
+        ctk.CTkLabel(fonts_container, text="Fuentes", font=ctk.CTkFont(size=13, weight="bold")).grid(
+            row=row_f, column=0, sticky="w", pady=(0, 6)
+        )
+        row_f += 1
 
-    def _select_font(default_path: str, prefer_bold: bool) -> str:
-        if default_path and os.path.exists(default_path):
-            return os.path.basename(default_path)
-        if font_names:
-            for name in font_names:
-                low = name.lower()
-                if prefer_bold and ("bd" in low or "bold" in low):
-                    return name
-            return font_names[0]
-        return "arial.ttf"
+        font_files = _get_font_files()
+        font_names = [os.path.basename(p) for p in font_files] if font_files else ["arial.ttf"]
 
-    bold_name = _select_font(current_bold, True)
-    regular_name = _select_font(current_regular, False)
+        current_bold = settings.get("font_bold") or ""
+        current_regular = settings.get("font_regular") or ""
 
-    search_row = ctk.CTkFrame(options, fg_color="transparent")
-    search_row.grid(row=row, column=0, sticky="ew", padx=12, pady=(0, 6))
-    search_row.grid_columnconfigure(1, weight=1)
-    ctk.CTkLabel(search_row, text="Buscar fuente", font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w")
-    entry_font_search = ctk.CTkEntry(search_row, placeholder_text="Escribe para filtrar...")
-    entry_font_search.grid(row=0, column=1, sticky="ew", padx=(8, 0))
-    row += 1
+        def _select_font(default_path: str, prefer_bold: bool) -> str:
+            if default_path and os.path.exists(default_path):
+                return os.path.basename(default_path)
+            if font_names:
+                for name in font_names:
+                    low = name.lower()
+                    if prefer_bold and ("bd" in low or "bold" in low):
+                        return name
+                return font_names[0]
+            return "arial.ttf"
 
-    ctk.CTkLabel(options, text="Font Bold", font=ctk.CTkFont(size=11)).grid(row=row, column=0, sticky="w", padx=12)
-    row += 1
-    bold_list = ctk.CTkScrollableFrame(options, height=120)
-    bold_list.grid(row=row, column=0, sticky="ew", padx=12, pady=(0, 6))
-    row += 1
-    bold_preview = ctk.CTkLabel(options, text="Preview Bold", font=ctk.CTkFont(size=11), text_color="#9aa4b2")
-    bold_preview.grid(row=row, column=0, sticky="w", padx=12, pady=(0, 6))
-    row += 1
-    bold_preview_img = ctk.CTkLabel(options, text="")
-    bold_preview_img.grid(row=row, column=0, sticky="w", padx=12, pady=(0, 8))
-    row += 1
+        bold_name = _select_font(current_bold, True)
+        regular_name = _select_font(current_regular, False)
 
-    ctk.CTkLabel(options, text="Font Regular", font=ctk.CTkFont(size=11)).grid(row=row, column=0, sticky="w", padx=12)
-    row += 1
-    reg_list = ctk.CTkScrollableFrame(options, height=120)
-    reg_list.grid(row=row, column=0, sticky="ew", padx=12, pady=(0, 6))
-    row += 1
-    reg_preview = ctk.CTkLabel(options, text="Preview Regular", font=ctk.CTkFont(size=11), text_color="#9aa4b2")
-    reg_preview.grid(row=row, column=0, sticky="w", padx=12, pady=(0, 6))
-    row += 1
-    reg_preview_img = ctk.CTkLabel(options, text="")
-    reg_preview_img.grid(row=row, column=0, sticky="w", padx=12, pady=(0, 8))
-    row += 1
+        search_row = ctk.CTkFrame(fonts_container, fg_color="transparent")
+        search_row.grid(row=row_f, column=0, sticky="ew", pady=(0, 6))
+        search_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(search_row, text="Buscar fuente", font=ctk.CTkFont(size=11)).grid(
+            row=0, column=0, sticky="w"
+        )
+        entry_font_search = ctk.CTkEntry(search_row, placeholder_text="Escribe para filtrar...")
+        entry_font_search.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        row_f += 1
 
-    bold_var = tk.StringVar(value=bold_name)
-    reg_var = tk.StringVar(value=regular_name)
+        ctk.CTkLabel(fonts_container, text="Font Bold", font=ctk.CTkFont(size=11)).grid(
+            row=row_f, column=0, sticky="w"
+        )
+        row_f += 1
+        bold_list = ctk.CTkScrollableFrame(fonts_container, height=120)
+        bold_list.grid(row=row_f, column=0, sticky="ew", pady=(0, 6))
+        row_f += 1
+        bold_preview = ctk.CTkLabel(fonts_container, text="Preview Bold", font=ctk.CTkFont(size=11), text_color="#9aa4b2")
+        bold_preview.grid(row=row_f, column=0, sticky="w", pady=(0, 6))
+        row_f += 1
+        bold_preview_img = ctk.CTkLabel(fonts_container, text="")
+        bold_preview_img.grid(row=row_f, column=0, sticky="w", pady=(0, 8))
+        row_f += 1
 
-    lbl_bold_current = ctk.CTkLabel(options, text=f"Bold actual: {bold_name}", font=ctk.CTkFont(size=11))
-    lbl_bold_current.grid(row=row, column=0, sticky="w", padx=12, pady=(0, 6))
-    row += 1
-    lbl_reg_current = ctk.CTkLabel(options, text=f"Regular actual: {regular_name}", font=ctk.CTkFont(size=11))
-    lbl_reg_current.grid(row=row, column=0, sticky="w", padx=12, pady=(0, 6))
-    row += 1
+        ctk.CTkLabel(fonts_container, text="Font Regular", font=ctk.CTkFont(size=11)).grid(
+            row=row_f, column=0, sticky="w"
+        )
+        row_f += 1
+        reg_list = ctk.CTkScrollableFrame(fonts_container, height=120)
+        reg_list.grid(row=row_f, column=0, sticky="ew", pady=(0, 6))
+        row_f += 1
+        reg_preview = ctk.CTkLabel(fonts_container, text="Preview Regular", font=ctk.CTkFont(size=11), text_color="#9aa4b2")
+        reg_preview.grid(row=row_f, column=0, sticky="w", pady=(0, 6))
+        row_f += 1
+        reg_preview_img = ctk.CTkLabel(fonts_container, text="")
+        reg_preview_img.grid(row=row_f, column=0, sticky="w", pady=(0, 8))
+        row_f += 1
 
-    def _resolve_font_path(name: str) -> str:
-        for p in font_files:
-            if os.path.basename(p) == name:
-                return p
-        return name
+        bold_var = tk.StringVar(value=bold_name)
+        reg_var = tk.StringVar(value=regular_name)
 
-    def _sync_fonts(*_):
-        settings["font_bold"] = _resolve_font_path(bold_var.get())
-        settings["font_regular"] = _resolve_font_path(reg_var.get())
-        lbl_bold_current.configure(text=f"Bold actual: {bold_var.get()}")
-        lbl_reg_current.configure(text=f"Regular actual: {reg_var.get()}")
-        _trigger_preview()
+        lbl_bold_current = ctk.CTkLabel(fonts_container, text=f"Bold actual: {bold_name}", font=ctk.CTkFont(size=11))
+        lbl_bold_current.grid(row=row_f, column=0, sticky="w", pady=(0, 6))
+        row_f += 1
+        lbl_reg_current = ctk.CTkLabel(fonts_container, text=f"Regular actual: {regular_name}", font=ctk.CTkFont(size=11))
+        lbl_reg_current.grid(row=row_f, column=0, sticky="w", pady=(0, 6))
+        row_f += 1
 
-    def _clear_frame(frame):
-        for child in frame.winfo_children():
-            child.destroy()
+        def _resolve_font_path(name: str) -> str:
+            for p in font_files:
+                if os.path.basename(p) == name:
+                    return p
+            return name
 
-    def _render_font_preview(font_name: str, target_label):
-        try:
-            sample = "Aa Bb 123"
-            font_path = _resolve_font_path(font_name)
-            from PIL import Image, ImageDraw, ImageFont, ImageTk
-            img = Image.new("RGBA", (320, 48), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(img)
+        def _sync_fonts(*_):
+            settings["font_bold"] = _resolve_font_path(bold_var.get())
+            settings["font_regular"] = _resolve_font_path(reg_var.get())
+            lbl_bold_current.configure(text=f"Bold actual: {bold_var.get()}")
+            lbl_reg_current.configure(text=f"Regular actual: {reg_var.get()}")
+            _trigger_preview()
+
+        def _render_font_preview(font_name: str, target_label):
             try:
-                font = ImageFont.truetype(font_path, size=28)
+                sample = "Aa Bb 123"
+                font_path = _resolve_font_path(font_name)
+                from PIL import Image, ImageDraw, ImageFont, ImageTk
+                img = Image.new("RGBA", (320, 48), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+                try:
+                    font = ImageFont.truetype(font_path, size=28)
+                except Exception:
+                    font = ImageFont.load_default()
+                draw.text((0, 6), sample, font=font, fill="#FFFFFF")
+                preview = ImageTk.PhotoImage(img)
+                target_label.configure(image=preview)
+                target_label.image = preview
             except Exception:
-                font = ImageFont.load_default()
-            draw.text((0, 6), sample, font=font, fill="#FFFFFF")
-            preview = ImageTk.PhotoImage(img)
-            target_label.configure(image=preview)
-            target_label.image = preview
-        except Exception:
-            target_label.configure(image="")
-            target_label.image = None
+                target_label.configure(image="")
+                target_label.image = None
 
-    def _fill_font_list(frame, items, var, preview_label, active_color="#1f5f99"):
-        _clear_frame(frame)
-        for name in items:
-            def _make_cmd(n=name):
-                def _set():
-                    var.set(n)
-                    _fill_font_list(frame, items, var, preview_label, active_color=active_color)
-                return _set
-            btn = ctk.CTkButton(frame, text=name, height=26, anchor="w", command=_make_cmd())
-            if var.get() == name:
-                btn.configure(fg_color=active_color)
-            btn.bind("<Enter>", lambda _e, n=name: _render_font_preview(n, preview_label))
-            btn.pack(fill="x", padx=6, pady=2)
-        var.trace_add("write", lambda *_: _sync_fonts())
+        def _fill_font_list(frame, items, var, preview_label, active_color="#1f5f99"):
+            _clear_children(frame)
+            for name in items:
+                def _make_cmd(n=name):
+                    def _set():
+                        var.set(n)
+                        _fill_font_list(frame, items, var, preview_label, active_color=active_color)
+                    return _set
+                btn = ctk.CTkButton(frame, text=name, height=26, anchor="w", command=_make_cmd())
+                if var.get() == name:
+                    btn.configure(fg_color=active_color)
+                btn.bind("<Enter>", lambda _e, n=name: _render_font_preview(n, preview_label))
+                btn.pack(fill="x", padx=6, pady=2)
+            var.trace_add("write", lambda *_: _sync_fonts())
 
-    def _apply_font_filter(*_):
-        query = entry_font_search.get().strip().lower()
-        if not query:
-            filtered = font_names
-        else:
-            filtered = [n for n in font_names if query in n.lower()]
-            if not filtered:
+        def _apply_font_filter(*_):
+            query = entry_font_search.get().strip().lower()
+            if not query:
                 filtered = font_names
-        _fill_font_list(bold_list, filtered, bold_var, bold_preview_img)
-        _fill_font_list(reg_list, filtered, reg_var, reg_preview_img)
-        if bold_var.get() not in filtered and filtered:
-            bold_var.set(filtered[0])
-        if reg_var.get() not in filtered and filtered:
-            reg_var.set(filtered[0])
+            else:
+                filtered = [n for n in font_names if query in n.lower()]
+                if not filtered:
+                    filtered = font_names
+            _fill_font_list(bold_list, filtered, bold_var, bold_preview_img)
+            _fill_font_list(reg_list, filtered, reg_var, reg_preview_img)
+            if bold_var.get() not in filtered and filtered:
+                bold_var.set(filtered[0])
+            if reg_var.get() not in filtered and filtered:
+                reg_var.set(filtered[0])
 
-    entry_font_search.bind("<KeyRelease>", _apply_font_filter)
-    _apply_font_filter()
+        entry_font_search.bind("<KeyRelease>", _apply_font_filter)
+        _apply_font_filter()
+
+    def _build_fonts_placeholder():
+        _clear_children(fonts_container)
+        ctk.CTkLabel(fonts_container, text="Fuentes", font=ctk.CTkFont(size=13, weight="bold")).grid(
+            row=0, column=0, sticky="w"
+        )
+        ctk.CTkLabel(
+            fonts_container,
+            text="Cargando fuentes al entrar en la pestaña...",
+            font=ctk.CTkFont(size=11),
+            text_color="#9aa4b2",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 8))
+        ctk.CTkButton(fonts_container, text="Cargar ahora", height=28, command=_ensure_fonts_loaded).grid(
+            row=2, column=0, sticky="w"
+        )
+
+    def _ensure_fonts_loaded():
+        if not fonts_state["loaded"]:
+            _build_fonts_section()
+            fonts_state["loaded"] = True
+            return
+        if fonts_state["refreshes"] < 1:
+            _build_fonts_section()
+            fonts_state["refreshes"] += 1
+
+    _build_fonts_placeholder()
 
 
     # Texto superior
@@ -780,3 +859,9 @@ def _build_creator(parent, settings, size, variant, log):
 
     # Inicializar preset
     _apply_preset(int(settings.get("preset_index", 0)))
+
+    ui_ready["value"] = True
+
+    return {
+        "ensure_fonts_loaded": _ensure_fonts_loaded,
+    }

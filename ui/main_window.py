@@ -210,11 +210,6 @@ def iniciar_app(procesar_video_fn, root=None):
     tab_youtube = desc_tabs.tab("YouTube MP3")
     tab_youtube_mp4 = desc_tabs.tab("YouTube MP4")
 
-    image_creator_tab.create_tab(tab_image_creator, {
-        "log": log,
-        "image_creator_state": shared_state.get("image_creator_state"),
-    })
-
     loaded_tabs = set()
     corte_api = {"value": None}
     ind_api = {"value": None}
@@ -222,6 +217,7 @@ def iniciar_app(procesar_video_fn, root=None):
     sub_api = {"value": None}
     clips_api = {"value": None}
     ai_api = {"value": None}
+    image_creator_api = {"value": None}
 
     def ensure_corte_api():
         if corte_api["value"] is None:
@@ -539,13 +535,13 @@ def iniciar_app(procesar_video_fn, root=None):
         loaded_tabs.add("activity")
 
     def ensure_image_creator():
-        if "image_creator" in loaded_tabs:
-            return
-        image_creator_tab.create_tab(tab_image_creator, {
-            "log": log,
-            "image_creator_state": shared_state.get("image_creator_state"),
-        })
-        loaded_tabs.add("image_creator")
+        if image_creator_api["value"] is None:
+            image_creator_api["value"] = image_creator_tab.create_tab(tab_image_creator, {
+                "log": log,
+                "image_creator_state": shared_state.get("image_creator_state"),
+            })
+            loaded_tabs.add("image_creator")
+        return image_creator_api["value"]
 
     def on_main_tab_change(tab_name: str):
         if tab_name == "Corte":
@@ -560,7 +556,11 @@ def iniciar_app(procesar_video_fn, root=None):
         elif tab_name == "Descargas":
             on_desc_tab_change(desc_tabs.get())
         elif tab_name == "Creador de Imagenes":
-            ensure_image_creator()
+            api = ensure_image_creator()
+            try:
+                api.get("ensure_fonts_loaded", lambda: None)()
+            except Exception:
+                pass
         elif tab_name == "Drive":
             ensure_drive()
         elif tab_name == "YouTube":
@@ -620,12 +620,34 @@ def iniciar_app(procesar_video_fn, root=None):
     ia_tabs.configure(command=lambda: on_ia_tab_change(ia_tabs.get()))
     desc_tabs.configure(command=lambda: on_desc_tab_change(desc_tabs.get()))
 
-    try:
-        on_corte_tab_change(corte_tabs.get())
-    except Exception:
+    def init_all_tabs():
         ensure_corte_api()
+        ensure_individual()
+        ensure_corte_sin_bordes()
+        ensure_corte_zoom()
+        ensure_musica()
+        ensure_imagenes()
+        ensure_visualizador()
+        ensure_pegar_visualizador()
+        ensure_cortar_visualizador()
+        ensure_srt()
+        ensure_subtitulados()
+        ensure_ia_clips()
+        ensure_ia_tiktok()
+        ensure_audio_mp3()
+        ensure_youtube_mp3()
+        ensure_youtube_mp4()
+        ensure_youtube_upload()
+        ensure_drive()
+        ensure_tiktok()
+        ensure_analytics()
+        ensure_instagram()
+        ensure_whatsapp()
+        ensure_activity()
+        ensure_image_creator()
+
     try:
-        on_main_tab_change(tabs.get())
+        init_all_tabs()
     except Exception:
         pass
     ventana.after_idle(lambda: ventana.state("zoomed"))
