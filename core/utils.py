@@ -128,7 +128,7 @@ def obtener_duracion_segundos(path: str) -> float:
         "-of", "default=noprint_wrappers=1:nokey=1",
         path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return float(result.stdout.strip())
 
 def obtener_tamano_video(path: str) -> tuple[int, int]:
@@ -139,7 +139,7 @@ def obtener_tamano_video(path: str) -> tuple[int, int]:
         "-of", "csv=p=0:s=x",
         path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     parts = result.stdout.strip().split("x")
     if len(parts) != 2:
         return (1920, 1080)
@@ -153,7 +153,7 @@ def obtener_fps(path: str) -> float:
         "-of", "default=noprint_wrappers=1:nokey=1",
         path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     val = result.stdout.strip()
     if not val:
         return 30.0
@@ -199,7 +199,7 @@ def concat_videos_ffmpeg(video_paths: list[str], output_path: str, log_fn=None) 
         ]
         if log_fn:
             log_fn(f"🔗 Concatenando {len(video_paths)} partes...")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             err = (result.stderr or "").strip()
             raise RuntimeError(f"Concatenación falló: {err[-500:]}")
@@ -260,7 +260,7 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
                     "-movflags", "+faststart",
                     fixed,
                 ]
-            result_fix = subprocess.run(cmd_fix, capture_output=True, text=True)
+            result_fix = subprocess.run(cmd_fix, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if result_fix.returncode != 0:
                 err_fix = (result_fix.stderr or "").strip()
                 raise RuntimeError(f"Re-encode previo falló: {err_fix[-300:]}")
@@ -400,7 +400,7 @@ def aplicar_corte_zoom_fondo_video(
     if log_fn:
         log_fn(f"🎯 Corte + zoom: {os.path.basename(output_path)}")
         log_fn(f"Filtro: {filtro}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         err = (result.stderr or "").strip()
         raise RuntimeError(f"Corte+zoom falló: {err[-800:]}")
@@ -452,7 +452,7 @@ def aplicar_encuadre_base(
     ]
     if log_fn:
         log_fn(f"🎯 Aplicando encuadre base: {os.path.basename(output_path)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         err = (result.stderr or "").strip()
         raise RuntimeError(f"Encuadre base falló: {err[-800:]}")
@@ -553,7 +553,7 @@ def transparentar_video_ffmpeg(
     if log_fn:
         log_fn(f"🔎 Transparentando video: {os.path.basename(output_path)}")
         log_fn(f"Filtro: {filtro}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         err = (result.stderr or "").strip()
         raise RuntimeError(f"Transparentar video fallo: {err[-500:]}")
@@ -590,7 +590,7 @@ def transparentar_imagen_ffmpeg(
     if log_fn:
         log_fn(f"🔎 Transparentando imagen: {os.path.basename(output_path)}")
         log_fn(f"Filtro: {filtro}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         err = (result.stderr or "").strip()
         raise RuntimeError(f"Transparentar imagen fallo: {err[-500:]}")
@@ -786,7 +786,7 @@ def tiene_audio(path: str) -> bool:
         "-of", "default=noprint_wrappers=1:nokey=1",
         path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.stdout.strip() == "audio"
 
 def aplicar_musica_fondo(
@@ -990,7 +990,7 @@ def crear_outro_tiktok(
     ]
     if log_fn:
         log_fn(f"🖼️ Creando tarjeta final: {os.path.basename(output_path)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         if log_fn:
             err = (result.stderr or "").strip()
@@ -1385,7 +1385,7 @@ def dividir_video_vertical_individual(
                     "-t", f"{total_dur:.3f}",
                     out_path
                 ]
-                video_res = subprocess.run(cmd_outro, capture_output=True, text=True)
+                video_res = subprocess.run(cmd_outro, capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if video_res.returncode != 0:
                     if log_fn:
                         err = (video_res.stderr or "").strip()
@@ -1404,7 +1404,7 @@ def dividir_video_vertical_individual(
                         "-vn", "-acodec", "aac",
                         audio_path
                     ]
-                    extra_res = subprocess.run(extra_cmd, capture_output=True, text=True)
+                    extra_res = subprocess.run(extra_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
                     if extra_res.returncode != 0:
                         if log_fn:
                             err = (extra_res.stderr or "").strip()
@@ -1425,7 +1425,7 @@ def dividir_video_vertical_individual(
                         "-t", f"{total_dur:.3f}",
                         out_path + ".tmp.mp4"
                     ]
-                    mux_res = subprocess.run(mux_cmd, capture_output=True, text=True)
+                    mux_res = subprocess.run(mux_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
                     if mux_res.returncode != 0:
                         if log_fn:
                             err = (mux_res.stderr or "").strip()
@@ -1541,7 +1541,7 @@ def dividir_audio_ffmpeg_partes(audio_path: str, partes: int = 5, log_fn=None):
         "-of", "default=noprint_wrappers=1:nokey=1",
         audio_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     duracion = float(result.stdout.strip())
     duracion_segmento = duracion / partes
 
@@ -1836,7 +1836,7 @@ def generar_visualizador_audio(
     ]
     if log_fn:
         log_fn(f"🎚 Generando visualizador ({os.path.basename(output_path)})")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         if log_fn:
             err = (result.stderr or "").strip()
@@ -1895,7 +1895,7 @@ def overlay_visualizador(
     ]
     if log_fn:
         log_fn(f"🧩 Aplicando overlay del visualizador ({posicion})")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         if log_fn:
             err = (result.stderr or "").strip()
@@ -2157,20 +2157,20 @@ def aplicar_fondo_imagen(
     if estilo == "blur":
         filtro = (
             f"{bg_filter_part},boxblur=20:1[bg];"
-            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
-            f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
+            f"[1:v]setpts=PTS-STARTPTS,scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay={offset_x}:{offset_y}:shortest=1,setsar=1[v]"
         )
     elif estilo == "fit":
         filtro = (
             f"{bg_filter_part}[bg];"
-            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
-            f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
+            f"[1:v]setpts=PTS-STARTPTS,scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay={offset_x}:{offset_y}:shortest=1,setsar=1[v]"
         )
     else:  # fill
         filtro = (
             f"{bg_filter_part}[bg];"
-            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
-            f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
+            f"[1:v]setpts=PTS-STARTPTS,scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay={offset_x}:{offset_y}:shortest=1,setsar=1[v]"
         )
 
     # Cintas y mensajes renderizados en overlay PNG (frente).
@@ -2194,7 +2194,7 @@ def aplicar_fondo_imagen(
     if log_fn:
         log_fn(f"🖼️ Aplicando fondo ({estilo}): {os.path.basename(output_path)}")
         log_fn(f"Filtro fondo: {filtro}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0 and log_fn:
         err = (result.stderr or "").strip()
         log_fn(f"❌ Fondo falló: {err[-1000:]}")
@@ -2343,7 +2343,7 @@ def aplicar_fondo_video(
     if log_fn:
         log_fn(f"Aplicando fondo video ({estilo}): {os.path.basename(output_path)}")
         log_fn(f"Filtro fondo: {filtro}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0 and log_fn:
         err = (result.stderr or "").strip()
         log_fn(f"Fondo video fallo: {err[-1000:]}")
@@ -2379,7 +2379,7 @@ def detectar_crop_barras(path: str) -> str | None:
             "-vf", "cropdetect=12:16:0",
             "-f", "null", "NUL"
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         salida = result.stderr or ""
         matches = re.findall(r"crop=\\d+:\\d+:\\d+:\\d+", salida)
         if not matches:
@@ -2530,7 +2530,7 @@ def quemar_srt_en_video(
                 "-i", srt_use_path,
                 tmp_ass
             ]
-            conv_res = subprocess.run(conv_cmd, capture_output=True, text=True)
+            conv_res = subprocess.run(conv_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if log_fn and conv_res.returncode != 0:
                 log_fn(f"ASS convert error: {(conv_res.stderr or '')[-300:]}")
             ass_lines = []
@@ -2620,7 +2620,7 @@ def quemar_srt_en_video(
     ]
     if log_fn:
         log_fn(f"Quemando SRT: {os.path.basename(output_path)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         err = (result.stderr or "").strip()
         if log_fn:

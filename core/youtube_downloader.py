@@ -70,8 +70,13 @@ def _descargar_youtube(
 
     if player_client:
         opciones["extractor_args"] = {"youtube": {"player_client": [player_client]}}
+    cookies_file = None
     if cookies_from_browser:
-        opciones["cookiesfrombrowser"] = cookies_from_browser
+        if _is_cookie_file(cookies_from_browser):
+            cookies_file = cookies_from_browser
+            opciones["cookiefile"] = cookies_from_browser
+        else:
+            opciones["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
 
     try:
         if stop_control.should_stop():
@@ -81,11 +86,28 @@ def _descargar_youtube(
             return ydl.prepare_filename(info)
     except DownloadError as e:
         msg = str(e)
-        if ("Sign in to confirm you're not a bot" in msg) or ("not a bot" in msg) or ("confirm you\u2019re not a bot" in msg):
+        is_antibot = ("Sign in to confirm you're not a bot" in msg) or ("not a bot" in msg) or ("confirm you\u2019re not a bot" in msg)
+        if is_antibot and retry_android and (player_client or "") != "android":
+            if log_fn:
+                log_fn("Reintentando con cliente Android (posible bypass anti-bot)...")
+            return _descargar_youtube(
+                url,
+                opciones,
+                output_dir=output_dir,
+                retry_update=retry_update,
+                retry_android=False,
+                player_client="android",
+                cookies_from_browser=cookies_from_browser,
+                log_fn=log_fn
+            )
+        if is_antibot:
+            extra = ""
+            if cookies_file:
+                extra = " Verifica que el cookies.txt sea reciente y provenga de youtube.com."
             raise DownloadError(
                 "YouTube esta bloqueando la descarga (verificacion anti-bot). "
-                "Solucion: pasar cookies del navegador (por ejemplo: edge o chrome). "
-                "En la app: completa 'Cookies navegador' con edge/chrome/firefox (ej: chrome:Default) y reintenta."
+                "Solucion: pasar cookies del navegador (por ejemplo: edge o chrome) o un cookies.txt valido."
+                + extra
             )
         if retry_update and ("403" in msg or "HTTP Error 403" in msg):
             _actualizar_yt_dlp(log_fn=log_fn)
@@ -113,6 +135,33 @@ def _descargar_youtube(
                 log_fn=log_fn
             )
         raise
+
+def _parse_cookies_from_browser(spec: str):
+    """
+    Convierte un string tipo "chrome:Default" a la tupla esperada por yt-dlp.
+    Formato: browser[:profile[:keyring[:container]]]
+    """
+    if not isinstance(spec, str):
+        return spec
+    raw = spec.strip()
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.split(":", 3)]
+    parts = [p for p in parts if p != ""]
+    if not parts:
+        return None
+    return tuple(parts)
+
+def _is_cookie_file(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    path = value.strip().strip('"')
+    if not path:
+        return False
+    if os.path.isfile(path):
+        return True
+    lower = path.lower()
+    return lower.endswith(".txt") and ("cookies" in lower)
 
 def descargar_audio_youtube(
     url: str,

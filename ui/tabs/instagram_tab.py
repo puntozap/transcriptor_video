@@ -4,6 +4,7 @@ import threading
 import time
 import urllib.parse
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog
 
 from ui.shared.tab_shell import create_tab_shell
@@ -61,12 +62,14 @@ def create_instagram_tab(parent, context):
     tabview.pack(fill="both", expand=True, padx=5, pady=5)
     
     tab_upload = tabview.add("Subir Reel")
+    tab_trial = tabview.add("Trial")
     tab_post = tabview.add("Post links")
     tab_story = tabview.add("Story video")
     tab_config = tabview.add("Configuracion")
     
     _setup_config_tab(tab_config, context)
     _setup_upload_tab(tab_upload, context)
+    _setup_trial_tab(tab_trial, context)
     _setup_post_links_tab(tab_post, context)
     _setup_story_video_tab(tab_story, context)
 
@@ -585,6 +588,97 @@ def _setup_upload_tab(parent, context):
 
     ctk.CTkButton(parent, text="🚀 Publicar en Instagram", command=process_upload, fg_color="#E1306C", hover_color="#C13584").pack(pady=(10, 8))
     ctk.CTkButton(parent, text="📦 Subir lote con IA", command=process_batch).pack(pady=(0, 20))
+
+
+def _setup_trial_tab(parent, context):
+    log = context.get("log", print)
+    config = _load_config()
+
+    parent.grid_columnconfigure(0, weight=1)
+    parent.grid_rowconfigure(0, weight=1)
+
+    body = ctk.CTkScrollableFrame(parent)
+    body.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 6))
+    body.grid_columnconfigure(0, weight=1)
+    content = body
+
+    ctk.CTkLabel(content, text="Publicar Trial Reel", font=("Arial", 16, "bold")).pack(pady=15)
+    ctk.CTkLabel(
+        content,
+        text="El Trial Reel se muestra primero a no seguidores. Luego puedes graduarlo.",
+        text_color="gray",
+    ).pack(pady=(0, 10))
+
+    ctk.CTkLabel(content, text="URL publica del video (obligatoria):").pack(anchor="w", padx=20, pady=(8, 0))
+    entry_url = ctk.CTkEntry(content, placeholder_text="https://tu-dominio.com/videos/mi_reel.mp4")
+    entry_url.pack(fill="x", padx=20, pady=(5, 10))
+
+    ctk.CTkLabel(content, text="Descripcion (Caption):").pack(anchor="w", padx=20, pady=(10, 0))
+    txt_caption = ctk.CTkTextbox(content, height=100)
+    txt_caption.pack(fill="x", padx=20, pady=(5, 10))
+
+    strat_row = ctk.CTkFrame(content, fg_color="transparent")
+    strat_row.pack(fill="x", padx=20, pady=(0, 8))
+    ctk.CTkLabel(strat_row, text="Graduacion:", font=ctk.CTkFont(size=12)).pack(side="left")
+    strategy_var = tk.StringVar(value="MANUAL")
+    strategy_menu = ctk.CTkOptionMenu(strat_row, values=["MANUAL", "SS_PERFORMANCE"], variable=strategy_var)
+    strategy_menu.pack(side="left", padx=(8, 0))
+
+    ctk.CTkLabel(
+        content,
+        text="MANUAL: tu decides cuando compartir con todos. SS_PERFORMANCE: IG decide si performa bien.",
+        text_color="gray",
+    ).pack(anchor="w", padx=20, pady=(0, 6))
+
+    def process_trial():
+        video_url = entry_url.get().strip()
+        caption = txt_caption.get("1.0", "end").strip()
+        graduation_strategy = strategy_var.get().strip().upper() or "MANUAL"
+        config = _load_config()
+
+        if not config.get("account_id") or not config.get("access_token"):
+            log("Error: Faltan credenciales en la pestana Configuracion.")
+            return
+        if not video_url:
+            log("Error: Para Trial Reel se requiere una URL publica.")
+            return
+
+        def _update_tokens(data: dict):
+            fresh = _load_config()
+            fresh["access_token"] = data.get("access_token", fresh.get("access_token"))
+            if data.get("expires_at"):
+                fresh["token_expires_at"] = data.get("expires_at")
+            _save_config(fresh)
+
+        def _run():
+            uploader = InstagramUploader(
+                config["access_token"],
+                config["account_id"],
+                app_id=config.get("app_id"),
+                app_secret=config.get("app_secret"),
+                token_expires_at=config.get("token_expires_at"),
+                on_token_update=_update_tokens,
+            )
+            log("IG: Publicando Trial Reel desde URL...")
+            uploader.upload_reel_trial(
+                video_url,
+                caption,
+                graduation_strategy=graduation_strategy,
+                log_fn=log,
+            )
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    actions = ctk.CTkFrame(parent, fg_color="transparent")
+    actions.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
+    actions.grid_columnconfigure(0, weight=1)
+    ctk.CTkButton(
+        actions,
+        text="🧪 Publicar Trial Reel",
+        command=process_trial,
+        fg_color="#E1306C",
+        hover_color="#C13584",
+    ).grid(row=0, column=0, sticky="ew")
 
 
 def _setup_post_links_tab(parent, context):

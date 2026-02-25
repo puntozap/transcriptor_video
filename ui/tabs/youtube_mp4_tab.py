@@ -1,8 +1,26 @@
 import threading
+import os
+import json
 import customtkinter as ctk
 
 from core.youtube_downloader import descargar_video_youtube_mp4
 from ui.shared import helpers
+
+CONFIG_PATH = "credentials/youtube_download_config.json"
+
+def _load_config():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def _save_config(data):
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
 
 def create_tab(parent, context):
@@ -63,7 +81,7 @@ def create_tab(parent, context):
 
     lbl_cookies = ctk.CTkLabel(
         yt_cookies_row,
-        text="Cookies navegador (opcional):",
+        text="Cookies navegador o archivo .txt (opcional):",
         font=ctk.CTkFont(size=12),
         text_color="#9aa4b2",
     )
@@ -71,9 +89,20 @@ def create_tab(parent, context):
 
     yt_cookies_entry = ctk.CTkEntry(
         yt_cookies_row,
-        placeholder_text="edge / chrome / firefox (ej: chrome:Default)",
+        placeholder_text="edge:Default o ruta a cookies.txt",
     )
     yt_cookies_entry.grid(row=0, column=1, sticky="ew")
+    cfg = _load_config()
+    default_cookies = cfg.get("cookies_source") or "edge:Default"
+    yt_cookies_entry.insert(0, default_cookies)
+
+    def _persist_cookies():
+        data = _load_config()
+        data["cookies_source"] = (yt_cookies_entry.get() or "").strip()
+        _save_config(data)
+
+    yt_cookies_entry.bind("<FocusOut>", lambda _e: _persist_cookies())
+    yt_cookies_entry.bind("<Return>", lambda _e: _persist_cookies())
 
     def descargar_mp4_youtube():
         url = yt_mp4_entry.get().strip()
@@ -89,6 +118,7 @@ def create_tab(parent, context):
         log("Descargando video de YouTube...")
         try:
             cookies_from_browser = (yt_cookies_entry.get() or "").strip() or None
+            _persist_cookies()
             out_path = descargar_video_youtube_mp4(url, cookies_from_browser=cookies_from_browser, log_fn=log)
             log(f"OK Video MP4 guardado: {out_path}")
             log("Finalizado proceso de YouTube MP4.")
@@ -133,5 +163,6 @@ def create_tab(parent, context):
         log_local("========================================")
 
     log = log_local
+    log("Tip cookies.txt: instala la extensión 'Get cookies.txt', abre youtube.com, exporta cookies y pega la ruta del .txt en 'Cookies navegador'.")
 
     return {}

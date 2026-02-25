@@ -82,6 +82,31 @@ class InstagramUploader:
             log_fn("? IG: Error. El video no se proces? correctamente.")
         return None
 
+    def upload_reel_trial(self, video_url: str, caption: str = "", graduation_strategy: str = "MANUAL", log_fn=print):
+        """
+        Publica un Trial Reel (solo no seguidores inicialmente).
+        graduation_strategy: MANUAL o SS_PERFORMANCE.
+        """
+        self._ensure_token(log_fn=log_fn)
+        trial_params = {"graduation_strategy": (graduation_strategy or "MANUAL").upper()}
+        if log_fn:
+            log_fn("🧪 IG: Creando contenedor Trial Reel...")
+        container_id = self._create_media_container(video_url, caption, False, log_fn, trial_params=trial_params)
+        if not container_id:
+            return None
+        if log_fn:
+            log_fn(f"⏳ IG: Esperando procesamiento (ID: {container_id})...")
+        if self._wait_for_processing(container_id, log_fn=log_fn):
+            if log_fn:
+                log_fn("🚀 IG: Publicando Trial Reel...")
+            media_id = self._publish_media(container_id, log_fn)
+            if media_id and log_fn:
+                log_fn(f"✅ IG: Trial Reel publicado (Media ID: {media_id})")
+            return media_id
+        if log_fn:
+            log_fn("❌ IG: Error. El video no se procesó correctamente.")
+        return None
+
     def upload_reel_resumable(self, file_path: str, caption: str = "", share_to_feed: bool = True, log_fn=print, validate: bool = True, auto_fix: bool = True, chunk_size_mb: int | None = None, max_attempts: int = 6):
         """
         Sube un Reel usando carga resumible (rupload) sin depender de URLs p?blicas.
@@ -301,7 +326,7 @@ class InstagramUploader:
             log_fn(f"? IG: Carousel publicado (Media ID: {media_id})")
         return media_id
 
-    def _create_media_container(self, video_url, caption, share_to_feed, log_fn):
+    def _create_media_container(self, video_url, caption, share_to_feed, log_fn, trial_params: dict | None = None):
         url = f"{self.base_url}/{self.account_id}/media"
         payload = {
             "media_type": "REELS",
@@ -310,6 +335,11 @@ class InstagramUploader:
             "share_to_feed": str(share_to_feed).lower(),
             "access_token": self.access_token
         }
+        if trial_params:
+            try:
+                payload["trial_params"] = json.dumps(trial_params)
+            except Exception:
+                payload["trial_params"] = trial_params
         try:
             r = requests.post(url, data=payload)
             r.raise_for_status()
