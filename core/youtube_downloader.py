@@ -74,7 +74,10 @@ def _descargar_youtube(
     if cookies_from_browser:
         if _is_cookie_file(cookies_from_browser):
             cookies_file = cookies_from_browser
-            opciones["cookiefile"] = cookies_from_browser
+            cookie_path = str(cookies_from_browser).strip().strip('"')
+            if not os.path.isfile(cookie_path):
+                raise DownloadError(f"No se encontro cookies.txt: {cookie_path}")
+            opciones["cookiefile"] = cookie_path
         else:
             opciones["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
 
@@ -106,7 +109,7 @@ def _descargar_youtube(
                 extra = " Verifica que el cookies.txt sea reciente y provenga de youtube.com."
             raise DownloadError(
                 "YouTube esta bloqueando la descarga (verificacion anti-bot). "
-                "Solucion: pasar cookies del navegador (por ejemplo: edge o chrome) o un cookies.txt valido."
+                "Solucion: pasar cookies del navegador (por ejemplo: chrome) o un cookies.txt valido."
                 + extra
             )
         if retry_update and ("403" in msg or "HTTP Error 403" in msg):

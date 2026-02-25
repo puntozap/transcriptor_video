@@ -4,6 +4,7 @@ import json
 import customtkinter as ctk
 
 from core.youtube_downloader import descargar_video_youtube_mp4
+from ui import dialogs
 from ui.shared import helpers
 
 CONFIG_PATH = "credentials/youtube_download_config.json"
@@ -78,10 +79,11 @@ def create_tab(parent, context):
     yt_cookies_row = ctk.CTkFrame(yt_mp4_card, fg_color="transparent")
     yt_cookies_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
     yt_cookies_row.grid_columnconfigure(1, weight=1)
+    yt_cookies_row.grid_columnconfigure(2, weight=0)
 
     lbl_cookies = ctk.CTkLabel(
         yt_cookies_row,
-        text="Cookies navegador o archivo .txt (opcional):",
+        text="Cookies .txt (recomendado):",
         font=ctk.CTkFont(size=12),
         text_color="#9aa4b2",
     )
@@ -89,12 +91,13 @@ def create_tab(parent, context):
 
     yt_cookies_entry = ctk.CTkEntry(
         yt_cookies_row,
-        placeholder_text="edge:Default o ruta a cookies.txt",
+        placeholder_text="Ruta a cookies.txt",
     )
     yt_cookies_entry.grid(row=0, column=1, sticky="ew")
     cfg = _load_config()
-    default_cookies = cfg.get("cookies_source") or "edge:Default"
-    yt_cookies_entry.insert(0, default_cookies)
+    default_cookies = cfg.get("cookies_source") or ""
+    if default_cookies:
+        yt_cookies_entry.insert(0, default_cookies)
 
     def _persist_cookies():
         data = _load_config()
@@ -103,6 +106,25 @@ def create_tab(parent, context):
 
     yt_cookies_entry.bind("<FocusOut>", lambda _e: _persist_cookies())
     yt_cookies_entry.bind("<Return>", lambda _e: _persist_cookies())
+
+    def _select_cookies_file():
+        f = dialogs.seleccionar_archivo(
+            "Seleccionar cookies.txt",
+            [("Cookies TXT", "*.txt"), ("Todos", "*.*")],
+        )
+        if f:
+            yt_cookies_entry.delete(0, "end")
+            yt_cookies_entry.insert(0, f)
+            _persist_cookies()
+
+    btn_cookies = ctk.CTkButton(
+        yt_cookies_row,
+        text="Seleccionar",
+        width=110,
+        height=28,
+        command=_select_cookies_file,
+    )
+    btn_cookies.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
     def descargar_mp4_youtube():
         url = yt_mp4_entry.get().strip()
@@ -163,6 +185,10 @@ def create_tab(parent, context):
         log_local("========================================")
 
     log = log_local
-    log("Tip cookies.txt: instala la extensión 'Get cookies.txt', abre youtube.com, exporta cookies y pega la ruta del .txt en 'Cookies navegador'.")
+    log(
+        "Tip cookies.txt: abre Chrome en incognito, inicia sesion en YouTube, "
+        "visita https://www.youtube.com/robots.txt en la misma pestaña, "
+        "exporta cookies con 'Get cookies.txt' y selecciona el archivo."
+    )
 
     return {}

@@ -18,6 +18,24 @@
 - Integracion con Drive, YouTube, Instagram, TikTok y WhatsApp.
 - Historias de Instagram con espera de procesamiento, auto-clip si supera 60s y tags.
 
+## YouTube MP3/MP4: cookies.txt con robots.txt
+YouTube suele bloquear descargas automatizadas. Para evitar el bloqueo, usa un `cookies.txt` exportado desde una sesion incognito y estabilizada con `robots.txt`.
+
+Pasos:
+1. Abre Chrome en incognito.
+2. Inicia sesion en YouTube.
+3. En la misma pestaña, abre:
+```text
+https://www.youtube.com/robots.txt
+```
+4. Exporta las cookies de `youtube.com` con una extension tipo "Get cookies.txt".
+5. Cierra la ventana incognito para evitar rotacion de cookies.
+6. En la app, selecciona el archivo `cookies.txt` en YouTube MP3 o YouTube MP4.
+
+Notas:
+1. Evita `cookies-from-browser` y el navegador abierto, porque YouTube rota cookies con frecuencia.
+2. Si el archivo no funciona, repite el flujo con una sesion incognito nueva.
+
 ## Requisitos
 - Python 3.11+ (probado en 3.13).
 - FFmpeg disponible en `PATH`.

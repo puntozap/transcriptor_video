@@ -229,6 +229,12 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
     temp_dir = os.path.join(tempfile.gettempdir(), f"concat_fix_{uuid.uuid4().hex}")
     os.makedirs(temp_dir, exist_ok=True)
     try:
+        target_fps = obtener_fps(v1)
+        if not target_fps or target_fps <= 0:
+            target_fps = 30.0
+    except Exception:
+        target_fps = 30.0
+    try:
         fixed_paths = []
         for idx, src in enumerate([v0, v1], start=1):
             has_audio = tiene_audio(src)
@@ -238,6 +244,8 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
                 cmd_fix = [
                     "ffmpeg", "-y",
                     "-i", src,
+                    "-vf", f"fps={target_fps:.3f}",
+                    "-r", f"{target_fps:.3f}",
                     "-c:v", "libx264",
                     "-c:a", "aac",
                     "-ar", "48000",
@@ -253,6 +261,8 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
                     "-t", f"{max(0.1, dur):.3f}",
                     "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
                     "-shortest",
+                    "-vf", f"fps={target_fps:.3f}",
+                    "-r", f"{target_fps:.3f}",
                     "-c:v", "libx264",
                     "-c:a", "aac",
                     "-ar", "48000",
@@ -2308,19 +2318,19 @@ def aplicar_fondo_video(
     if estilo == "blur":
         filtro = (
             f"{bg_filter_part},boxblur=20:1[bg];"
-            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[1:v]setpts=PTS-STARTPTS,scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
             f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
         )
     elif estilo == "fit":
         filtro = (
             f"{bg_filter_part}[bg];"
-            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[1:v]setpts=PTS-STARTPTS,scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
             f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
         )
     else:  # fill
         filtro = (
             f"{bg_filter_part}[bg];"
-            f"[1:v]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
+            f"[1:v]setpts=PTS-STARTPTS,scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg];"
             f"[bg][fg]overlay={offset_x}:{offset_y},setsar=1[v]"
         )
 
