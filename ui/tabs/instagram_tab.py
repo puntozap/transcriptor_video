@@ -3,6 +3,9 @@ import json
 import threading
 import time
 import urllib.parse
+import urllib.request
+import shutil
+import subprocess
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog
@@ -15,6 +18,115 @@ from core.instagram_auth import exchange_long_lived_token
 from core.instagram_oauth import oauth_login_flow
 
 CONFIG_PATH = "credentials/instagram_config.json"
+IG_LOCAL_PORT = 4532
+IG_TUNNEL_DIR = os.path.join("output", "ig_ngrok_tmp")
+tunnel_state = {"http_proc": None, "ngrok_proc": None, "root": None}
+
+
+def _stop_tunnel(log):
+    http_proc = tunnel_state.get("http_proc")
+    ngrok_proc = tunnel_state.get("ngrok_proc")
+    for proc in (ngrok_proc, http_proc):
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+    tunnel_state["http_proc"] = None
+    tunnel_state["ngrok_proc"] = None
+    tunnel_state["root"] = None
+    if log:
+        log("IG: Tunnel cerrado.")
+
+
+def _start_tunnel_for_dir(root_dir: str, log):
+    if not shutil.which("ngrok"):
+        log("IG: No se encontro ngrok en PATH.")
+        return None
+    try:
+        os.makedirs(root_dir, exist_ok=True)
+        http_proc = subprocess.Popen(
+            ["python", "-m", "http.server", str(IG_LOCAL_PORT)],
+            cwd=root_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        ngrok_proc = subprocess.Popen(
+            ["ngrok", "http", str(IG_LOCAL_PORT)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        tunnel_state["http_proc"] = http_proc
+        tunnel_state["ngrok_proc"] = ngrok_proc
+        tunnel_state["root"] = root_dir
+    except Exception as e:
+        log(f"IG: Error iniciando tunnel: {e}")
+        _stop_tunnel(log)
+        return None
+
+    public_url = None
+    for _ in range(30):
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=2) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            tunnels = data.get("tunnels") or []
+            https_tunnel = next((t for t in tunnels if str(t.get("public_url", "")).startswith("https://")), None)
+            if https_tunnel:
+                public_url = https_tunnel.get("public_url")
+                break
+        except Exception:
+            time.sleep(0.5)
+            continue
+        time.sleep(0.5)
+    if not public_url:
+        log("IG: No se pudo obtener URL publica de ngrok.")
+        _stop_tunnel(log)
+        return None
+    log(f"IG: Tunnel listo: {public_url}")
+    return public_url
+
+
+def _add_files_via_tunnel(files: list[str], log) -> list[str]:
+    if not files:
+        return []
+    for f in files:
+        if not os.path.exists(f):
+            log(f"IG: Archivo no encontrado: {f}")
+            return []
+    root = tunnel_state.get("root") or IG_TUNNEL_DIR
+    if not tunnel_state.get("http_proc") or not tunnel_state.get("ngrok_proc"):
+        log("IG: Iniciando tunnel local...")
+        public = _start_tunnel_for_dir(root, log)
+        if not public:
+            return []
+    else:
+        public = _start_tunnel_for_dir(root, log) if tunnel_state.get("root") != root else None
+        public = public or None
+    if not public:
+        # if already running, fetch current URL
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=2) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            tunnels = data.get("tunnels") or []
+            https_tunnel = next((t for t in tunnels if str(t.get("public_url", "")).startswith("https://")), None)
+            public = https_tunnel.get("public_url") if https_tunnel else None
+        except Exception:
+            public = None
+    if not public:
+        log("IG: Tunnel activo no disponible.")
+        return []
+
+    urls = []
+    for f in files:
+        dest = os.path.join(root, os.path.basename(f))
+        try:
+            shutil.copy2(f, dest)
+        except Exception as e:
+            log(f"IG: No se pudo copiar archivo a tunnel: {e}")
+            return []
+        filename = os.path.basename(dest).replace(" ", "%20")
+        urls.append(f"{public}/{filename}")
+    return urls
 
 def _load_config():
     if os.path.exists(CONFIG_PATH):
@@ -62,14 +174,12 @@ def create_instagram_tab(parent, context):
     tabview.pack(fill="both", expand=True, padx=5, pady=5)
     
     tab_upload = tabview.add("Subir Reel")
-    tab_trial = tabview.add("Trial")
     tab_post = tabview.add("Post links")
     tab_story = tabview.add("Story video")
     tab_config = tabview.add("Configuracion")
     
     _setup_config_tab(tab_config, context)
     _setup_upload_tab(tab_upload, context)
-    _setup_trial_tab(tab_trial, context)
     _setup_post_links_tab(tab_post, context)
     _setup_story_video_tab(tab_story, context)
 
@@ -88,6 +198,21 @@ def _setup_story_video_tab(parent, context):
     ctk.CTkLabel(parent, text="URLs (una por linea):").pack(anchor="w", padx=20, pady=(6, 0))
     txt_urls = ctk.CTkTextbox(parent, height=120)
     txt_urls.pack(fill="x", padx=20, pady=(5, 10))
+    btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+    btn_row.pack(fill="x", padx=20, pady=(0, 10))
+    def _add_story_files():
+        files = filedialog.askopenfilenames(filetypes=[("Media", "*.mp4;*.mov;*.m4v;*.webm;*.png;*.jpg;*.jpeg;*.webp")])
+        if not files:
+            return
+        urls = _add_files_via_tunnel(list(files), log)
+        if not urls:
+            return
+        current = txt_urls.get("1.0", "end").strip()
+        new_text = ("\n".join(urls) if not current else current + "\n" + "\n".join(urls))
+        txt_urls.delete("1.0", "end")
+        txt_urls.insert("1.0", new_text)
+        log("IG: URLs agregadas desde archivos locales.")
+    ctk.CTkButton(btn_row, text="Agregar archivos", command=_add_story_files).pack(side="left")
 
     story_tag_row = ctk.CTkFrame(parent, fg_color="transparent")
     story_tag_row.pack(fill="x", padx=20, pady=(0, 8))
@@ -178,6 +303,7 @@ def _setup_story_video_tab(parent, context):
                     uploader.upload_story_video_auto(media_url, log_fn=log, user_tags=_build_story_tags())
                 else:
                     uploader.upload_story_image(media_url, log_fn=log, user_tags=_build_story_tags())
+            _stop_tunnel(log)
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -325,6 +451,15 @@ def _setup_upload_tab(parent, context):
         if f:
             entry_file.delete(0, "end")
             entry_file.insert(0, f)
+            # Auto-tunnel y URL publica para subir como Reel
+            def _run_tunnel():
+                urls = _add_files_via_tunnel([f], log)
+                if not urls:
+                    return
+                entry_url.delete(0, "end")
+                entry_url.insert(0, urls[0])
+                log(f"IG: URL publica lista: {urls[0]}")
+            threading.Thread(target=_run_tunnel, daemon=True).start()
 
     def browse_batch():
         files = filedialog.askopenfilenames(filetypes=[("MP4 Video", "*.mp4")])
@@ -476,7 +611,7 @@ def _setup_upload_tab(parent, context):
         video_path = entry_file.get().strip()
         video_url = entry_url.get().strip()
         caption = txt_caption.get("1.0", "end").strip()
-        share_feed = bool(chk_feed.get())
+        share_feed = True #bool(chk_feed.get())
         share_story = bool(chk_story.get())
         chunk_size_mb = _get_chunk_size_mb()
         _persist_chunk_size(chunk_size_mb)
@@ -526,6 +661,8 @@ def _setup_upload_tab(parent, context):
                 )
                 if share_story:
                     log("IG: Story requiere URL publica. Omite Story o pega una URL.")
+            # Cerrar tunnel si fue iniciado desde el selector
+            _stop_tunnel(log)
         
         threading.Thread(target=_run, daemon=True).start()
 
@@ -590,97 +727,6 @@ def _setup_upload_tab(parent, context):
     ctk.CTkButton(parent, text="📦 Subir lote con IA", command=process_batch).pack(pady=(0, 20))
 
 
-def _setup_trial_tab(parent, context):
-    log = context.get("log", print)
-    config = _load_config()
-
-    parent.grid_columnconfigure(0, weight=1)
-    parent.grid_rowconfigure(0, weight=1)
-
-    body = ctk.CTkScrollableFrame(parent)
-    body.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 6))
-    body.grid_columnconfigure(0, weight=1)
-    content = body
-
-    ctk.CTkLabel(content, text="Publicar Trial Reel", font=("Arial", 16, "bold")).pack(pady=15)
-    ctk.CTkLabel(
-        content,
-        text="El Trial Reel se muestra primero a no seguidores. Luego puedes graduarlo.",
-        text_color="gray",
-    ).pack(pady=(0, 10))
-
-    ctk.CTkLabel(content, text="URL publica del video (obligatoria):").pack(anchor="w", padx=20, pady=(8, 0))
-    entry_url = ctk.CTkEntry(content, placeholder_text="https://tu-dominio.com/videos/mi_reel.mp4")
-    entry_url.pack(fill="x", padx=20, pady=(5, 10))
-
-    ctk.CTkLabel(content, text="Descripcion (Caption):").pack(anchor="w", padx=20, pady=(10, 0))
-    txt_caption = ctk.CTkTextbox(content, height=100)
-    txt_caption.pack(fill="x", padx=20, pady=(5, 10))
-
-    strat_row = ctk.CTkFrame(content, fg_color="transparent")
-    strat_row.pack(fill="x", padx=20, pady=(0, 8))
-    ctk.CTkLabel(strat_row, text="Graduacion:", font=ctk.CTkFont(size=12)).pack(side="left")
-    strategy_var = tk.StringVar(value="MANUAL")
-    strategy_menu = ctk.CTkOptionMenu(strat_row, values=["MANUAL", "SS_PERFORMANCE"], variable=strategy_var)
-    strategy_menu.pack(side="left", padx=(8, 0))
-
-    ctk.CTkLabel(
-        content,
-        text="MANUAL: tu decides cuando compartir con todos. SS_PERFORMANCE: IG decide si performa bien.",
-        text_color="gray",
-    ).pack(anchor="w", padx=20, pady=(0, 6))
-
-    def process_trial():
-        video_url = entry_url.get().strip()
-        caption = txt_caption.get("1.0", "end").strip()
-        graduation_strategy = strategy_var.get().strip().upper() or "MANUAL"
-        config = _load_config()
-
-        if not config.get("account_id") or not config.get("access_token"):
-            log("Error: Faltan credenciales en la pestana Configuracion.")
-            return
-        if not video_url:
-            log("Error: Para Trial Reel se requiere una URL publica.")
-            return
-
-        def _update_tokens(data: dict):
-            fresh = _load_config()
-            fresh["access_token"] = data.get("access_token", fresh.get("access_token"))
-            if data.get("expires_at"):
-                fresh["token_expires_at"] = data.get("expires_at")
-            _save_config(fresh)
-
-        def _run():
-            uploader = InstagramUploader(
-                config["access_token"],
-                config["account_id"],
-                app_id=config.get("app_id"),
-                app_secret=config.get("app_secret"),
-                token_expires_at=config.get("token_expires_at"),
-                on_token_update=_update_tokens,
-            )
-            log("IG: Publicando Trial Reel desde URL...")
-            uploader.upload_reel_trial(
-                video_url,
-                caption,
-                graduation_strategy=graduation_strategy,
-                log_fn=log,
-            )
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    actions = ctk.CTkFrame(parent, fg_color="transparent")
-    actions.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
-    actions.grid_columnconfigure(0, weight=1)
-    ctk.CTkButton(
-        actions,
-        text="🧪 Publicar Trial Reel",
-        command=process_trial,
-        fg_color="#E1306C",
-        hover_color="#C13584",
-    ).grid(row=0, column=0, sticky="ew")
-
-
 def _setup_post_links_tab(parent, context):
     log = context.get("log", print)
     config = _load_config()
@@ -694,6 +740,21 @@ def _setup_post_links_tab(parent, context):
 
     txt_urls = ctk.CTkTextbox(parent, height=160)
     txt_urls.pack(fill="x", padx=20, pady=(0, 10))
+    btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+    btn_row.pack(fill="x", padx=20, pady=(0, 10))
+    def _add_post_files():
+        files = filedialog.askopenfilenames(filetypes=[("Media", "*.mp4;*.mov;*.m4v;*.webm;*.png;*.jpg;*.jpeg;*.webp")])
+        if not files:
+            return
+        urls = _add_files_via_tunnel(list(files), log)
+        if not urls:
+            return
+        current = txt_urls.get("1.0", "end").strip()
+        new_text = ("\n".join(urls) if not current else current + "\n" + "\n".join(urls))
+        txt_urls.delete("1.0", "end")
+        txt_urls.insert("1.0", new_text)
+        log("IG: URLs agregadas desde archivos locales.")
+    ctk.CTkButton(btn_row, text="Agregar archivos", command=_add_post_files).pack(side="left")
 
     ctk.CTkLabel(parent, text="Descripcion (Caption):").pack(anchor="w", padx=20, pady=(10, 0))
     txt_caption = ctk.CTkTextbox(parent, height=100)
@@ -794,6 +855,7 @@ def _setup_post_links_tab(parent, context):
                         uploader.upload_story_video_auto(first, log_fn=log, user_tags=_build_story_tags())
                     else:
                         uploader.upload_story_image(first, log_fn=log, user_tags=_build_story_tags())
+            _stop_tunnel(log)
 
         threading.Thread(target=_run, daemon=True).start()
 

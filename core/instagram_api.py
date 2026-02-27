@@ -66,9 +66,10 @@ class InstagramUploader:
         self._ensure_token(log_fn=log_fn)
         if log_fn:
             log_fn("?? IG: Creando contenedor para el video...")
-        container_id = self._create_media_container(video_url, caption, share_to_feed, log_fn)
+        container_id = self._create_reel_container_from_url(video_url, caption, share_to_feed, log_fn)
         if not container_id:
             return None
+        self._log_container_info(container_id, log_fn)
         if log_fn:
             log_fn(f"? IG: Esperando procesamiento (ID: {container_id})...")
         if self._wait_for_processing(container_id, log_fn=log_fn):
@@ -80,31 +81,6 @@ class InstagramUploader:
             return media_id
         if log_fn:
             log_fn("? IG: Error. El video no se proces? correctamente.")
-        return None
-
-    def upload_reel_trial(self, video_url: str, caption: str = "", graduation_strategy: str = "MANUAL", log_fn=print):
-        """
-        Publica un Trial Reel (solo no seguidores inicialmente).
-        graduation_strategy: MANUAL o SS_PERFORMANCE.
-        """
-        self._ensure_token(log_fn=log_fn)
-        trial_params = {"graduation_strategy": (graduation_strategy or "MANUAL").upper()}
-        if log_fn:
-            log_fn("🧪 IG: Creando contenedor Trial Reel...")
-        container_id = self._create_media_container(video_url, caption, False, log_fn, trial_params=trial_params)
-        if not container_id:
-            return None
-        if log_fn:
-            log_fn(f"⏳ IG: Esperando procesamiento (ID: {container_id})...")
-        if self._wait_for_processing(container_id, log_fn=log_fn):
-            if log_fn:
-                log_fn("🚀 IG: Publicando Trial Reel...")
-            media_id = self._publish_media(container_id, log_fn)
-            if media_id and log_fn:
-                log_fn(f"✅ IG: Trial Reel publicado (Media ID: {media_id})")
-            return media_id
-        if log_fn:
-            log_fn("❌ IG: Error. El video no se procesó correctamente.")
         return None
 
     def upload_reel_resumable(self, file_path: str, caption: str = "", share_to_feed: bool = True, log_fn=print, validate: bool = True, auto_fix: bool = True, chunk_size_mb: int | None = None, max_attempts: int = 6):
@@ -326,26 +302,28 @@ class InstagramUploader:
             log_fn(f"? IG: Carousel publicado (Media ID: {media_id})")
         return media_id
 
-    def _create_media_container(self, video_url, caption, share_to_feed, log_fn, trial_params: dict | None = None):
+    def _create_reel_container_from_url(self, video_url, caption, share_to_feed, log_fn):
         url = f"{self.base_url}/{self.account_id}/media"
+        # Usar params para el token y json para el cuerpo garantiza tipos correctos
+        params = {"access_token": self.access_token}
         payload = {
             "media_type": "REELS",
             "video_url": video_url,
             "caption": caption,
-            "share_to_feed": str(share_to_feed).lower(),
-            "access_token": self.access_token
+            "share_to_feed": bool(share_to_feed)
         }
-        if trial_params:
-            try:
-                payload["trial_params"] = json.dumps(trial_params)
-            except Exception:
-                payload["trial_params"] = trial_params
+        if log_fn:
+            log_fn(f"DEBUG IG: Payload Reel URL: media_type={payload.get('media_type')}, share_to_feed={payload.get('share_to_feed')}")
+            log_fn(f"DEBUG IG: Payload Reel (JSON): media_type={payload.get('media_type')}, share_to_feed={payload.get('share_to_feed')}")
         try:
-            r = requests.post(url, data=payload)
+            r = requests.post(url, params=params, json=payload)
             r.raise_for_status()
-            return r.json().get("id")
+            data = r.json()
+            if log_fn:
+                log_fn(f"DEBUG IG: Respuesta create_container: {data}")
+            return data.get("id")
         except Exception as e:
-            self._log_error(e, "creando contenedor IG", log_fn)
+            self._log_error(e, "creando contenedor Reel (URL)", log_fn)
             return None
 
     def _create_story_container(self, video_url: str | None = None, image_url: str | None = None, log_fn=None, user_tags: list[dict] | None = None):
@@ -457,13 +435,36 @@ class InstagramUploader:
             "creation_id": container_id,
             "access_token": self.access_token
         }
+        if log_fn:
+            log_fn(f"DEBUG IG: Publicando container_id: {container_id}")
         try:
             r = requests.post(url, data=payload)
             r.raise_for_status()
             return r.json().get("id")
         except Exception as e:
+            if log_fn and hasattr(e, "response") and e.response is not None:
+                try:
+                    log_fn(f"DEBUG IG: publish response: {e.response.json()}")
+                except Exception:
+                    log_fn(f"DEBUG IG: publish raw: {e.response.text}")
             self._log_error(e, "publicando IG", log_fn)
             return None
+
+    def _log_container_info(self, container_id: str, log_fn=None):
+        if not log_fn:
+            return
+        try:
+            url = f"{self.base_url}/{container_id}"
+            params = {
+                "fields": "media_type,media_product_type,is_carousel_item,status_code,status",
+                "access_token": self.access_token
+            }
+            r = requests.get(url, params=params)
+            r.raise_for_status()
+            info = r.json()
+            log_fn(f"DEBUG IG: Container info: {info}")
+        except Exception as e:
+            log_fn(f"DEBUG IG: No se pudo leer info del contenedor: {e}")
 
     def _create_resumable_container(self, caption: str, share_to_feed: bool, log_fn):
         url = f"{self.base_url}/{self.account_id}/media"
@@ -838,6 +839,5 @@ class InstagramUploader:
             return link
         except Exception as e:
             if log_fn:
-                log_fn(f"IG: Error subiendo clip a URL pública: {e}")
+                log_fn(f"IG: Error subiendo clip a: {e}")
             return None
-

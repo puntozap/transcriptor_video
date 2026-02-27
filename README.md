@@ -87,6 +87,11 @@ OPENAI_API_KEY=tu_token
 ```
 Guarda ese valor en `.env`.
 
+## Instalador Windows (Inno Setup)
+- Script: `installer\\zempervideos.iss`
+- El instalador descarga siempre la version mas reciente de Python, FFmpeg y ngrok al momento de ejecutar.
+- Ejecuta `scripts\\install_windows.ps1` para crear `venv` e instalar `requirements.txt`.
+
 ## Instalacion en macOS (detallada)
 ### 1) Instalar Homebrew
 ```bash
