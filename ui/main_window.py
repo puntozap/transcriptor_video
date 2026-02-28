@@ -1,5 +1,6 @@
 import os
 import tkinter as tk
+from tkinter import messagebox
 import customtkinter as ctk
 import winsound
 from core.drive_config import get_drive_folder_id
@@ -101,6 +102,23 @@ def iniciar_app(procesar_video_fn, root=None):
     abrir_videos = helpers.abrir_videos
     abrir_audios = helpers.abrir_audios
     abrir_descargas = helpers.abrir_descargas
+
+    def on_close():
+        if stop_control.is_busy():
+            salir = messagebox.askyesno(
+                "Proceso en ejecucion",
+                "Hay un proceso en ejecucion.\n¿Deseas salir de todos modos?",
+                parent=ventana,
+            )
+            if not salir:
+                return
+            try:
+                stop_control.request_stop(log)
+            except Exception:
+                pass
+        ventana.destroy()
+
+    ventana.protocol("WM_DELETE_WINDOW", on_close)
 
     def eliminar_audios(log_fn=None):
         output_root = os.path.abspath("output")

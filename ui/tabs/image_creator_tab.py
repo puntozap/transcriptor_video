@@ -5,9 +5,10 @@ import threading
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import colorchooser
-from PIL import ImageTk
+from PIL import Image, ImageTk
 
 from core.image_composer import compose_image
+from core.openai_image_gen import generar_background_openai
 from ui.shared import helpers
 
 
@@ -71,9 +72,11 @@ def create_tab(parent, context):
 
     tab_vert = tabview.add("Imagen vertical")
     tab_horz = tabview.add("Imagen horizontal")
+    tab_ai = tabview.add("ImagenIA")
 
     vert_api = _build_creator(tab_vert, state["vertical"], (1080, 1920), "vertical", log)
     horz_api = _build_creator(tab_horz, state["horizontal"], (1280, 720), "horizontal", log)
+    _build_ai_tab(tab_ai, state, log, state["vertical"], state["horizontal"])
 
     def _ensure_fonts_loaded():
         for api in (vert_api, horz_api):
@@ -865,3 +868,153 @@ def _build_creator(parent, settings, size, variant, log):
     return {
         "ensure_fonts_loaded": _ensure_fonts_loaded,
     }
+
+
+def _build_ai_tab(parent, state, log, vert_settings, horz_settings):
+    parent.grid_columnconfigure(0, weight=1)
+    parent.grid_rowconfigure(0, weight=1)
+
+    scroll = ctk.CTkScrollableFrame(parent, corner_radius=10)
+    scroll.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+    scroll.grid_columnconfigure(0, weight=1)
+
+    header = ctk.CTkFrame(scroll, fg_color="transparent")
+    header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
+    header.grid_columnconfigure(1, weight=1)
+    ctk.CTkLabel(header, text="ImagenIA (OpenAI)", font=ctk.CTkFont(size=16, weight="bold")).grid(
+        row=0, column=0, sticky="w"
+    )
+    ctk.CTkLabel(
+        header,
+        text="Genera backgrounds desde texto.",
+        text_color="gray",
+    ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+    body = ctk.CTkFrame(scroll, fg_color="transparent")
+    body.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
+    body.grid_columnconfigure(0, weight=2)
+    body.grid_columnconfigure(1, weight=3)
+    body.grid_rowconfigure(2, weight=1)
+
+    ctk.CTkLabel(body, text="Prompt:", font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w")
+    txt_prompt = ctk.CTkTextbox(body, height=120)
+    txt_prompt.grid(row=1, column=0, sticky="nsew", padx=(0, 12), pady=(6, 8))
+
+    right = ctk.CTkFrame(body)
+    right.grid(row=0, column=1, rowspan=3, sticky="nsew")
+    right.grid_columnconfigure(0, weight=1)
+
+    ctk.CTkLabel(right, text="Opciones", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        row=0, column=0, sticky="w", padx=12, pady=(10, 6)
+    )
+
+    size_row = ctk.CTkFrame(right, fg_color="transparent")
+    size_row.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+    ctk.CTkLabel(size_row, text="Tamaño:", font=ctk.CTkFont(size=11)).pack(side="left")
+    size_var = tk.StringVar(value="1024x1536")
+    size_menu = ctk.CTkOptionMenu(
+        size_row,
+        values=["1024x1536", "1536x1024", "1024x1024"],
+        variable=size_var,
+        width=140,
+    )
+    size_menu.pack(side="left", padx=(8, 0))
+
+    quality_row = ctk.CTkFrame(right, fg_color="transparent")
+    quality_row.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
+    ctk.CTkLabel(quality_row, text="Calidad:", font=ctk.CTkFont(size=11)).pack(side="left")
+    quality_var = tk.StringVar(value="medium")
+    quality_menu = ctk.CTkOptionMenu(
+        quality_row,
+        values=["low", "medium", "high"],
+        variable=quality_var,
+        width=140,
+    )
+    quality_menu.pack(side="left", padx=(8, 0))
+
+    assign_row = ctk.CTkFrame(right, fg_color="transparent")
+    assign_row.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 6))
+    ctk.CTkLabel(assign_row, text="Asignar fondo:", font=ctk.CTkFont(size=11)).pack(side="left")
+    assign_var = tk.StringVar(value="Ninguno")
+    assign_menu = ctk.CTkOptionMenu(
+        assign_row,
+        values=["Ninguno", "Vertical", "Horizontal", "Ambos"],
+        variable=assign_var,
+        width=140,
+    )
+    assign_menu.pack(side="left", padx=(8, 0))
+
+    name_row = ctk.CTkFrame(right, fg_color="transparent")
+    name_row.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 8))
+    ctk.CTkLabel(name_row, text="Nombre (opcional):", font=ctk.CTkFont(size=11)).pack(side="left")
+    entry_name = ctk.CTkEntry(name_row, width=180, placeholder_text="ai_bg")
+    entry_name.pack(side="left", padx=(8, 0), fill="x", expand=True)
+
+    preview_card = ctk.CTkFrame(right)
+    preview_card.grid(row=5, column=0, sticky="nsew", padx=12, pady=(0, 8))
+    preview_card.grid_columnconfigure(0, weight=1)
+    ctk.CTkLabel(preview_card, text="Preview", font=ctk.CTkFont(size=12, weight="bold")).grid(
+        row=0, column=0, sticky="w", padx=8, pady=(8, 4)
+    )
+    preview_lbl = tk.Label(preview_card, text="(sin preview)", bg="#1a1d24", fg="#cbd5e1")
+    preview_lbl.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+    preview_state = {"img": None, "path": ""}
+
+    log_card, _log_widget, log_local = helpers.create_log_panel(
+        right,
+        title="Actividad IA",
+        height=160,
+    )
+    log_card.grid(row=6, column=0, sticky="nsew", padx=12, pady=(0, 12))
+
+    def _update_preview(img_path: str):
+        try:
+            img = Image.open(img_path)
+            img.thumbnail((360, 360))
+            tk_img = ImageTk.PhotoImage(img)
+            preview_lbl.configure(image=tk_img, text="")
+            preview_lbl.image = tk_img
+            preview_state["img"] = tk_img
+            preview_state["path"] = img_path
+        except Exception as exc:
+            log_local(f"Error preview: {exc}")
+
+    def _assign_background(path: str):
+        opt = assign_var.get()
+        if opt == "Vertical":
+            vert_settings["background_path"] = path
+            log_local("Fondo asignado a Imagen vertical.")
+        elif opt == "Horizontal":
+            horz_settings["background_path"] = path
+            log_local("Fondo asignado a Imagen horizontal.")
+        elif opt == "Ambos":
+            vert_settings["background_path"] = path
+            horz_settings["background_path"] = path
+            log_local("Fondo asignado a Vertical y Horizontal.")
+
+    def _run_generate():
+        prompt = txt_prompt.get("1.0", "end").strip()
+        if not prompt:
+            log_local("Escribe un prompt primero.")
+            return
+        base = entry_name.get().strip() or f"ai_bg_{int(time.time())}"
+        out_dir = os.path.join("output", "imagenes_creator", "ai")
+        os.makedirs(out_dir, exist_ok=True)
+        output_path = os.path.join(out_dir, f"{base}.jpg")
+        try:
+            generar_background_openai(
+                prompt=prompt,
+                output_path=output_path,
+                size=size_var.get(),
+                quality=quality_var.get(),
+                log_fn=log_local,
+            )
+            _update_preview(output_path)
+            _assign_background(output_path)
+            state["ai_last_path"] = output_path
+        except Exception as exc:
+            log_local(f"Error IA: {exc}")
+
+    btn_generate = ctk.CTkButton(right, text="Generar background", height=36)
+    btn_generate.grid(row=7, column=0, sticky="ew", padx=12, pady=(0, 12))
+    btn_generate.configure(command=lambda: threading.Thread(target=_run_generate, daemon=True).start())

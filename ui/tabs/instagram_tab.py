@@ -1,6 +1,7 @@
 import os
 import json
 import threading
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -13,6 +14,7 @@ from tkinter import filedialog
 from ui.shared.tab_shell import create_tab_shell
 from ui.shared import helpers
 from core.instagram_api import InstagramUploader
+from core.utils import overlay_image_temporizada, output_base_dir
 from core.ai_instagram import generar_descripcion_instagram
 from core.instagram_auth import exchange_long_lived_token
 from core.instagram_oauth import oauth_login_flow
@@ -486,6 +488,27 @@ def _setup_upload_tab(parent, context):
     txt_caption = ctk.CTkTextbox(parent, height=100)
     txt_caption.pack(fill="x", padx=20, pady=(5, 10))
 
+    # Overlay imagen (00:00 - 00:01)
+    overlay_state = {"path": ""}
+    overlay_row = ctk.CTkFrame(parent, fg_color="transparent")
+    overlay_row.pack(fill="x", padx=20, pady=(0, 8))
+    overlay_var = ctk.BooleanVar(value=False)
+    chk_overlay = ctk.CTkCheckBox(
+        overlay_row,
+        text="Agregar imagen en 00:00-00:01",
+        variable=overlay_var,
+    )
+    chk_overlay.pack(side="left")
+    lbl_overlay = ctk.CTkLabel(overlay_row, text="(sin imagen)", text_color="gray")
+    lbl_overlay.pack(side="left", padx=(10, 8))
+    def _select_overlay_image():
+        from ui.dialogs import seleccionar_imagen
+        img = seleccionar_imagen()
+        if img:
+            overlay_state["path"] = img
+            lbl_overlay.configure(text=os.path.basename(img))
+    ctk.CTkButton(overlay_row, text="Seleccionar imagen", width=150, command=_select_overlay_image).pack(side="left")
+
     ai_row = ctk.CTkFrame(parent, fg_color="transparent")
     ai_row.pack(fill="x", padx=20, pady=(0, 6))
     ai_row.grid_columnconfigure(3, weight=1)
@@ -613,9 +636,14 @@ def _setup_upload_tab(parent, context):
         caption = txt_caption.get("1.0", "end").strip()
         share_feed = True #bool(chk_feed.get())
         share_story = bool(chk_story.get())
+        use_overlay = bool(overlay_var.get())
+        overlay_image = overlay_state.get("path", "")
         chunk_size_mb = _get_chunk_size_mb()
         _persist_chunk_size(chunk_size_mb)
         config = _load_config()
+
+        if use_overlay and video_path and os.path.exists(video_path):
+            video_url = ""
 
         if not config.get("account_id") or not config.get("access_token"):
             log("Error: Faltan credenciales en la pestana Configuracion.")
@@ -641,7 +669,53 @@ def _setup_upload_tab(parent, context):
                 token_expires_at=config.get("token_expires_at"),
                 on_token_update=_update_tokens,
             )
-            if video_url:
+            upload_path = video_path
+            overlay_video_url = ""
+            if use_overlay:
+                if video_url:
+                    log("IG: Overlay con imagen requiere video local. Ignorando URL publica.")
+                else:
+                    if not overlay_image or not os.path.exists(overlay_image):
+                        log("IG: Debes seleccionar una imagen valida para el overlay.")
+                        return
+                    if not video_path or not os.path.exists(video_path):
+                        log("IG: Video local no encontrado para aplicar overlay.")
+                        return
+                    base_dir = os.path.join(output_base_dir(video_path), "instagram")
+                    os.makedirs(base_dir, exist_ok=True)
+                    base_name = os.path.splitext(os.path.basename(video_path))[0]
+                    safe_name = re.sub(r"[<>:\"/\\|?*]", "_", base_name)
+                    overlay_out = os.path.join(base_dir, f"{safe_name}_ig_overlay.mp4")
+                    try:
+                        overlay_image_temporizada(
+                            video_path,
+                            overlay_image,
+                            overlay_out,
+                            0.0,
+                            1.0,
+                            log_fn=log,
+                        )
+                        upload_path = overlay_out
+                        urls = _add_files_via_tunnel([overlay_out], log)
+                        if not urls:
+                            log("IG: No se pudo generar URL publica para el video con overlay.")
+                            return
+                        overlay_video_url = urls[0]
+                    except Exception as e:
+                        log(f"IG: Error aplicando overlay: {e}")
+                        return
+
+            if overlay_video_url:
+                log("IG: Subiendo desde URL publica (video con overlay)...")
+                media_id = uploader.upload_reel(
+                    overlay_video_url,
+                    caption,
+                    share_feed,
+                    log_fn=log,
+                )
+                if share_story and media_id:
+                    uploader.upload_story_video_auto(overlay_video_url, log_fn=log, user_tags=_build_story_tags())
+            elif video_url:
                 log("IG: Subiendo desde URL publica...")
                 media_id = uploader.upload_reel(
                     video_url,
@@ -653,7 +727,7 @@ def _setup_upload_tab(parent, context):
                     uploader.upload_story_video_auto(video_url, log_fn=log, user_tags=_build_story_tags())
             else:
                 media_id = uploader.upload_reel_resumable(
-                    video_path,
+                    upload_path,
                     caption,
                     share_feed,
                     log_fn=log,
