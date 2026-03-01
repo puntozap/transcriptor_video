@@ -23,138 +23,71 @@
 - FFmpeg disponible en `PATH`.
 - Windows recomendado por CustomTkinter.
 
-## Instalacion en Windows (detallada)
-### 1) Instalar Python
-Opciones recomendadas:
-- Winget (recomendado):
+## Instalacion en Windows (recomendada)
+Desde la raiz del proyecto:
 ```powershell
-winget install Python.Python.3.11
+installer\install-setup.bat
 ```
-- Chocolatey:
+Esto instala Python 3.11, FFmpeg, ngrok, crea el `venv` en la raiz e instala dependencias.
+
+Crear acceso directo en el escritorio:
 ```powershell
-choco install python --version=3.11.8
+installer\create-shortcut.bat
 ```
 
-Links oficiales (si quieres descargar manualmente):
-```text
-https://www.python.org/downloads/windows/
-```
-
-Verifica instalacion:
+Si quieres ejecutar sin acceso directo:
 ```powershell
-python --version
-pip --version
+installer\run-app.bat
 ```
-
-### 2) Instalar FFmpeg
-Opciones recomendadas:
-- Winget:
-```powershell
-winget install Gyan.FFmpeg
-```
-- Chocolatey:
-```powershell
-choco install ffmpeg
-```
-
-Links oficiales:
-```text
-https://ffmpeg.org/download.html
-```
-
-Verifica instalacion:
-```powershell
-ffmpeg -version
-```
-
-### 3) Crear entorno virtual e instalar dependencias
-```powershell
-python -m venv venv
-.\venv\Scripts\activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-Si `pip install -r requirements.txt` falla por permisos, prueba:
-```powershell
-python -m pip install -r requirements.txt
-```
-
-### 4) (Opcional) Variables de entorno
-Para IA y metadata:
-```text
-OPENAI_API_KEY=tu_token
-```
-Guarda ese valor en `.env`.
 
 ## Instalador Windows (Inno Setup)
 - Script: `installer\\zempervideos.iss`
 - El instalador descarga siempre la version mas reciente de Python, FFmpeg y ngrok al momento de ejecutar.
 - Ejecuta `scripts\\install_windows.ps1` para crear `venv` e instalar `requirements.txt`.
 
-## Instalacion en macOS (detallada)
-### 1) Instalar Homebrew
+## Instalacion en macOS (recomendada)
+Desde la raiz del proyecto:
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+bash installer/install-setup-macos.sh
 ```
 
-### 2) Instalar Python
+Crear acceso directo en el escritorio:
 ```bash
-brew install python@3.11
+bash installer/create-shortcut-macos.sh
 ```
 
-Link oficial (descarga manual):
-```text
-https://www.python.org/downloads/macos/
-```
-
-Verifica instalacion:
+Ejecutar manualmente:
 ```bash
-python3 --version
-pip3 --version
+installer/run-app.command
 ```
 
-### 3) Instalar FFmpeg
-```bash
-brew install ffmpeg
-```
-
-Link oficial:
-```text
-https://ffmpeg.org/download.html
-```
-
-Verifica instalacion:
-```bash
-ffmpeg -version
-```
-
-### 4) Crear entorno virtual e instalar dependencias
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 5) (Opcional) Variables de entorno
+## Variables de entorno (opcional)
 Para IA y metadata:
 ```text
 OPENAI_API_KEY=tu_token
 ```
 Guarda ese valor en `.env`.
 
-## Instalacion del proyecto
+## Ejecucion manual (si no usas instaladores)
+Windows:
 ```powershell
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
+venv\Scripts\python.exe app.py
+```
+macOS:
+```bash
+./venv/bin/python app.py
 ```
 
-## Ejecucion
-```powershell
-python app.py
-```
+## Solucion de problemas
+- Error `cannot import name '_imaging' from 'PIL'`:
+  - Ejecuta `installer/install-setup.bat` (Windows) o `installer/install-setup-macos.sh` (macOS).
+  - Verifica que Pillow sea `<12` porque `moviepy` lo requiere.
+- Error `ModuleNotFoundError: No module named 'yt_dlp'`:
+  - Ejecuta el instalador otra vez o instala manualmente con:
+    - `venv\Scripts\python.exe -m pip install yt-dlp` (Windows)
+    - `./venv/bin/python -m pip install yt-dlp` (macOS)
+- Si el acceso directo no abre:
+  - Ejecuta `installer/run-app.bat` (Windows) o `installer/run-app.command` (macOS) y revisa el log en `installer/`.
 La UI inicia maximizada y escucha `localhost:4850` para capturar OAuth cuando se autoriza Drive o YouTube.
 
 ## Configuracion rapida

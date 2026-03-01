@@ -1,0 +1,16 @@
+dom 01/03/2026 15:42:35,42 Iniciando... 
+Traceback (most recent call last):
+  File "C:\laragon\www\transcriptor_video\app.py", line 1, in <module>
+    from ui.main_window import iniciar_app
+  File "C:\laragon\www\transcriptor_video\ui\main_window.py", line 11, in <module>
+    from ui.tabs import (
+  File "C:\laragon\www\transcriptor_video\ui\tabs\youtube_mp3_tab.py", line 6, in <module>
+    from core.youtube_downloader import descargar_audio_youtube
+  File "C:\laragon\www\transcriptor_video\core\youtube_downloader.py", line 6, in <module>
+    import yt_dlp
+ModuleNotFoundError: No module named 'yt_dlp'
+dom 01/03/2026 15:42:47,12 Finalizo con codigo 1 
+dom 01/03/2026 15:44:57,45 Iniciando... 
+dom 01/03/2026 15:45:37,96 Finalizo con codigo 0 
+dom 01/03/2026 15:48:29,26 Iniciando... 
+dom 01/03/2026 15:48:54,01 Finalizo con codigo 0 

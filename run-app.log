@@ -1,0 +1,12 @@
+dom 01/03/2026 15:15:51,84 Iniciando... 
+Traceback (most recent call last):
+  File "C:\laragon\www\transcriptor_video\app.py", line 1, in <module>
+    from ui.main_window import iniciar_app
+  File "C:\laragon\www\transcriptor_video\ui\main_window.py", line 9, in <module>
+    from ui.shared.preview import create_subtitle_preview
+  File "C:\laragon\www\transcriptor_video\ui\shared\preview.py", line 4, in <module>
+    from PIL import Image, ImageTk, ImageDraw
+  File "C:\laragon\www\transcriptor_video\venv\Lib\site-packages\PIL\Image.py", line 90, in <module>
+    from . import _imaging as core
+ImportError: cannot import name '_imaging' from 'PIL' (C:\laragon\www\transcriptor_video\venv\Lib\site-packages\PIL\__init__.py)
+dom 01/03/2026 15:15:52,56 Finalizo con codigo 1 

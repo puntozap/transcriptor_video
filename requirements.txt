@@ -39,3 +39,4 @@ typing_extensions==4.15.0
 urllib3==1.26.16
 fastapi==0.116.1
 uvicorn==0.35.0
+yt-dlp==2025.2.19
