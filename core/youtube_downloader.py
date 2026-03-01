@@ -20,6 +20,8 @@ def _descargar_youtube(
     output_dir: str,
     retry_update: bool,
     retry_android: bool,
+    retry_no_cookies: bool,
+    retry_best: bool,
     player_client: str | None,
     cookies_from_browser: str | None,
     log_fn=None
@@ -86,6 +88,41 @@ def _descargar_youtube(
             return ydl.prepare_filename(info)
     except DownloadError as e:
         msg = str(e)
+        if retry_no_cookies and cookies_from_browser and ("DPAPI" in msg or "Failed to decrypt" in msg):
+            if log_fn:
+                log_fn("Error de cookies del navegador. Reintentando sin cookies...")
+            opciones_retry = dict(opciones)
+            opciones_retry.pop("cookiefile", None)
+            opciones_retry.pop("cookiesfrombrowser", None)
+            return _descargar_youtube(
+                url,
+                opciones_retry,
+                output_dir=output_dir,
+                retry_update=retry_update,
+                retry_android=retry_android,
+                retry_no_cookies=False,
+                retry_best=retry_best,
+                player_client=player_client,
+                cookies_from_browser=None,
+                log_fn=log_fn
+            )
+        if retry_best and ("Requested format is not available" in msg or "format is not available" in msg):
+            if log_fn:
+                log_fn("Formato no disponible. Reintentando con 'best'...")
+            opciones_retry = dict(opciones)
+            opciones_retry["format"] = "best"
+            return _descargar_youtube(
+                url,
+                opciones_retry,
+                output_dir=output_dir,
+                retry_update=retry_update,
+                retry_android=retry_android,
+                retry_no_cookies=retry_no_cookies,
+                retry_best=False,
+                player_client=player_client,
+                cookies_from_browser=cookies_from_browser,
+                log_fn=log_fn
+            )
         is_antibot = ("Sign in to confirm you're not a bot" in msg) or ("not a bot" in msg) or ("confirm you\u2019re not a bot" in msg)
         if is_antibot and retry_android and (player_client or "") != "android":
             if log_fn:
@@ -96,6 +133,8 @@ def _descargar_youtube(
                 output_dir=output_dir,
                 retry_update=retry_update,
                 retry_android=False,
+                retry_no_cookies=retry_no_cookies,
+                retry_best=retry_best,
                 player_client="android",
                 cookies_from_browser=cookies_from_browser,
                 log_fn=log_fn
@@ -117,6 +156,8 @@ def _descargar_youtube(
                 output_dir=output_dir,
                 retry_update=False,
                 retry_android=retry_android,
+                retry_no_cookies=retry_no_cookies,
+                retry_best=retry_best,
                 player_client=player_client,
                 cookies_from_browser=cookies_from_browser,
                 log_fn=log_fn
@@ -130,6 +171,8 @@ def _descargar_youtube(
                 output_dir=output_dir,
                 retry_update=False,
                 retry_android=False,
+                retry_no_cookies=retry_no_cookies,
+                retry_best=retry_best,
                 player_client="android",
                 cookies_from_browser=cookies_from_browser,
                 log_fn=log_fn
@@ -199,6 +242,8 @@ def descargar_audio_youtube(
         output_dir=output_dir,
         retry_update=retry_update,
         retry_android=retry_android,
+        retry_no_cookies=True,
+        retry_best=False,
         player_client=player_client,
         cookies_from_browser=cookies_from_browser,
         log_fn=log_fn
@@ -243,6 +288,8 @@ def descargar_video_youtube_mp4(
         output_dir=output_dir,
         retry_update=retry_update,
         retry_android=retry_android,
+        retry_no_cookies=True,
+        retry_best=True,
         player_client=player_client,
         cookies_from_browser=cookies_from_browser,
         log_fn=log_fn
