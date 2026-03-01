@@ -119,19 +119,77 @@ def _draw_centered_multiline(text: str, font: ImageFont.ImageFont, color, width:
         y += heights[i] + line_spacing
     return layer
 
+
+def _blend_channel(c1: int, c2: int, t: float) -> int:
+    return int(c1 + (c2 - c1) * t)
+
+
+def _make_gradient_layer(width: int, height: int, color1, color2, direction: str) -> Image.Image:
+    if direction == "solid":
+        return Image.new("RGBA", (width, height), color1)
+    layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    pixels = layer.load()
+    r1, g1, b1, a1 = color1
+    r2, g2, b2, a2 = color2
+    if direction == "horizontal":
+        denom = max(1, width - 1)
+        for x in range(width):
+            t = x / denom
+            r = _blend_channel(r1, r2, t)
+            g = _blend_channel(g1, g2, t)
+            b = _blend_channel(b1, b2, t)
+            a = _blend_channel(a1, a2, t)
+            for y in range(height):
+                pixels[x, y] = (r, g, b, a)
+    elif direction == "diagonal":
+        denom = max(1, (width - 1) + (height - 1))
+        for y in range(height):
+            for x in range(width):
+                t = (x + y) / denom
+                r = _blend_channel(r1, r2, t)
+                g = _blend_channel(g1, g2, t)
+                b = _blend_channel(b1, b2, t)
+                a = _blend_channel(a1, a2, t)
+                pixels[x, y] = (r, g, b, a)
+    else:
+        denom = max(1, height - 1)
+        for y in range(height):
+            t = y / denom
+            r = _blend_channel(r1, r2, t)
+            g = _blend_channel(g1, g2, t)
+            b = _blend_channel(b1, b2, t)
+            a = _blend_channel(a1, a2, t)
+            for x in range(width):
+                pixels[x, y] = (r, g, b, a)
+    return layer
+
 def compose_image(settings: dict, size: Tuple[int, int], preview_scale: float = 1.0) -> Image.Image:
     base_w, base_h = size
     if preview_scale and preview_scale != 1.0:
         base_w = max(1, int(base_w * preview_scale))
         base_h = max(1, int(base_h * preview_scale))
 
-    canvas = Image.new("RGBA", (base_w, base_h), (0, 0, 0, 255))
+    transparent_bg = bool(settings.get("transparent_bg", False))
+    canvas_bg = (0, 0, 0, 0) if transparent_bg else (0, 0, 0, 255)
+    canvas = Image.new("RGBA", (base_w, base_h), canvas_bg)
     draw = ImageDraw.Draw(canvas)
 
     # Fondo
     bg_path = settings.get("background_path")
     bg_img = _open_image(bg_path)
-    if bg_img:
+    rect_enabled = bool(settings.get("rect_enabled", False))
+    if not transparent_bg and (rect_enabled or not bg_img):
+        rect_color1 = _parse_hex_color(settings.get("rect_color_1", "#3B2F2F"))
+        rect_color2 = _parse_hex_color(settings.get("rect_color_2", "#A67C52"))
+        rect_gradient = (settings.get("rect_gradient") or "vertical").lower()
+        rect_layer = _make_gradient_layer(base_w, base_h, rect_color1, rect_color2, rect_gradient)
+        rect_opacity = float(settings.get("rect_opacity", 1.0))
+        rect_opacity = max(0.0, min(1.0, rect_opacity))
+        if rect_opacity < 1.0:
+            alpha = rect_layer.getchannel("A").point(lambda p: int(p * rect_opacity))
+            rect_layer.putalpha(alpha)
+        canvas.alpha_composite(rect_layer)
+    if bg_img and not transparent_bg:
         bg_layer = _resize_cover(bg_img, base_w, base_h)
         bg_filter = (settings.get("bg_filter") or "none").lower()
         if bg_filter != "none":

@@ -12,6 +12,7 @@ from ui.tabs import (
     actividad_tab,
     audio_tab,
     cortar_visualizador_tab,
+    corte_audio_tab,
     corte_individual_tab,
     overlay_imagenes_tab,
     musica_fondo_tab,
@@ -193,6 +194,7 @@ def iniciar_app(procesar_video_fn, root=None):
     corte_tabs.add("Corte individual")
     corte_tabs.add("Corte sin bordes")
     corte_tabs.add("Corte + Zoom")
+    corte_tabs.add("Corte de audio")
     corte_tabs.add("Música")
     corte_tabs.add("Imágenes")
     corte_tabs.add("Visualizador")
@@ -218,6 +220,7 @@ def iniciar_app(procesar_video_fn, root=None):
     tab_ind = corte_tabs.tab("Corte individual")
     tab_sin_bordes = corte_tabs.tab("Corte sin bordes")
     tab_zoom = corte_tabs.tab("Corte + Zoom")
+    tab_corte_audio = corte_tabs.tab("Corte de audio")
     tab_musica = corte_tabs.tab("Música")
     tab_imagenes = corte_tabs.tab("Imágenes")
     tab_srt = sub_tabs.tab("Generar subtitulos")
@@ -315,6 +318,19 @@ def iniciar_app(procesar_video_fn, root=None):
             "beep_fin": beep_fin,
         })
         loaded_tabs.add("corte_zoom")
+
+    def ensure_corte_audio():
+        if "corte_audio" in loaded_tabs:
+            return
+        corte_audio_tab.create_tab(tab_corte_audio, {
+            "estado": estado,
+            "log": log,
+            "log_seccion": log_seccion,
+            "alerta_busy": alerta_busy,
+            "stop_control": stop_control,
+            "beep_fin": beep_fin,
+        })
+        loaded_tabs.add("corte_audio")
 
     def ensure_musica():
         if "musica" in loaded_tabs:
@@ -603,6 +619,8 @@ def iniciar_app(procesar_video_fn, root=None):
             ensure_corte_sin_bordes()
         elif tab_name == "Corte + Zoom":
             ensure_corte_zoom()
+        elif tab_name == "Corte de audio":
+            ensure_corte_audio()
         elif tab_name == "M?sica":
             ensure_musica()
         elif tab_name == "Im?genes":
@@ -643,6 +661,7 @@ def iniciar_app(procesar_video_fn, root=None):
         ensure_individual()
         ensure_corte_sin_bordes()
         ensure_corte_zoom()
+        ensure_corte_audio()
         ensure_musica()
         ensure_imagenes()
         ensure_visualizador()

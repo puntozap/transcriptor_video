@@ -5,7 +5,7 @@ import tkinter as tk
 
 from core.ai_youtube import subir_video_youtube_desde_ia
 from core.corte_config import get_corte_defaults, get_cintas_defaults, get_mensajes_defaults
-from core.utils import obtener_duracion_segundos, output_base_dir, dividir_audio_ffmpeg, next_correlative_dir
+from core.utils import obtener_duracion_segundos, output_base_dir
 from core.workflow import procesar_srt, procesar_quemar_srt
 from ui.shared.preview import SimpleVideoPlayer
 from ui.shared import helpers
@@ -650,12 +650,6 @@ def create_tab(parent, context):
         slider_inicio.configure(from_=0, to=rango["duracion"])
         slider_fin.configure(from_=0, to=rango["duracion"])
         set_range_seconds(0, rango["duracion"])
-
-    def format_mmss(seconds: float) -> str:
-        seconds = max(0.0, float(seconds))
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{minutes:02d}:{secs:02d}"
 
     corte_scroll = ctk.CTkScrollableFrame(left, corner_radius=0)
     corte_scroll.grid(row=0, column=0, sticky="nsew")
@@ -1334,91 +1328,6 @@ def create_tab(parent, context):
     lbl_acc = ctk.CTkLabel(actions, text="Seleccion y ejecucion", font=ctk.CTkFont(size=15, weight="bold"))
     lbl_acc.grid(row=0, column=0, sticky="w", padx=14, pady=(12, 6))
 
-    audio_split_path = estado.get("audio_split_path")
-    audio_split_last_dir = estado.get("audio_split_last_dir")
-    audio_parts_var = tk.StringVar(value=str(estado.get("audio_split_partes", "5")))
-    audio_duracion_var = tk.StringVar(value="00:00")
-    audio_por_parte_var = tk.StringVar(value="00:00")
-
-    def _update_audio_labels():
-        path = estado.get("audio_split_path")
-        if not path or not os.path.exists(path):
-            audio_duracion_var.set("00:00")
-            audio_por_parte_var.set("00:00")
-            return
-        try:
-            dur = float(obtener_duracion_segundos(path))
-        except Exception:
-            audio_duracion_var.set("00:00")
-            audio_por_parte_var.set("00:00")
-            return
-        audio_duracion_var.set(format_mmss(dur))
-        try:
-            partes = int(float(audio_parts_var.get().strip().replace(",", ".")))
-        except Exception:
-            partes = 0
-        if partes > 0:
-            audio_por_parte_var.set(format_mmss(dur / partes))
-        else:
-            audio_por_parte_var.set("00:00")
-
-    def _seleccionar_audio_split():
-        from ui.dialogs import seleccionar_archivo
-        path = seleccionar_archivo("Seleccionar audio", [("Audio", "*.mp3;*.wav;*.m4a;*.aac;*.ogg")])
-        if path:
-            estado["audio_split_path"] = path
-            log(f"Audio seleccionado: {path}")
-            _refresh_audio_name()
-            _update_audio_labels()
-
-    def _split_audio_en_partes():
-        path = estado.get("audio_split_path")
-        if not path or not os.path.exists(path):
-            log("Selecciona un audio primero.")
-            return
-        try:
-            partes = int(float(audio_parts_var.get().strip().replace(",", ".")))
-        except Exception:
-            partes = 0
-        if partes <= 0:
-            log("Partes invalidas. Usa un numero mayor a 0.")
-            return
-        if stop_control.is_busy():
-            alerta_busy()
-            return
-        stop_control.clear_stop()
-        stop_control.set_busy(True)
-
-        def _run_split():
-            try:
-                helpers.log_seccion(log, None, "Corte audio en partes iguales")
-                dur = float(obtener_duracion_segundos(path))
-                segundos_por_parte = max(0.1, dur / partes)
-                base_dir = output_base_dir(path)
-                out_dir = next_correlative_dir(base_dir, "audios", "audio-partes")
-                estado["audio_split_last_dir"] = out_dir
-                estado["audio_split_partes"] = str(partes)
-                log(f"Duracion total: {format_mmss(dur)}")
-                log(f"Duracion por parte: {format_mmss(segundos_por_parte)}")
-                log(f"Dividiendo en {partes} partes...")
-                partes_audio = dividir_audio_ffmpeg(
-                    path,
-                    segundos_por_parte=segundos_por_parte,
-                    out_dir=out_dir,
-                    total_partes=partes,
-                    start_sec=0.0,
-                    end_sec=dur,
-                    log_fn=log,
-                )
-                log(f"Listo. Partes generadas: {len(partes_audio)}")
-                log(f"Carpeta: {out_dir}")
-            except Exception as exc:
-                log(f"Error al dividir audio: {exc}")
-            finally:
-                stop_control.set_busy(False)
-
-        threading.Thread(target=_run_split, daemon=True).start()
-
     def on_click_local():
         from ui.dialogs import seleccionar_video
         video = seleccionar_video()
@@ -1435,87 +1344,21 @@ def create_tab(parent, context):
     btn_iniciar = ctk.CTkButton(actions, text="Cortar", command=iniciar_proceso, height=46)
     btn_iniciar.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 8))
 
-    audio_card = ctk.CTkFrame(actions, corner_radius=10)
-    audio_card.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 8))
-    audio_card.grid_columnconfigure(1, weight=1)
-
-    lbl_audio = ctk.CTkLabel(audio_card, text="Audio (partes iguales)", font=ctk.CTkFont(size=12, weight="bold"))
-    lbl_audio.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(8, 4))
-
-    btn_audio_select = ctk.CTkButton(
-        audio_card,
-        text="Seleccionar audio",
-        command=_seleccionar_audio_split,
-        height=28,
-        width=140,
-    )
-    btn_audio_select.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 6))
-
-    lbl_audio_name = ctk.CTkLabel(
-        audio_card,
-        text=os.path.basename(audio_split_path) if audio_split_path else "(sin audio)",
-        font=ctk.CTkFont(size=11),
-    )
-    lbl_audio_name.grid(row=1, column=1, sticky="w", padx=(6, 10), pady=(0, 6))
-
-    def _refresh_audio_name():
-        path = estado.get("audio_split_path")
-        lbl_audio_name.configure(text=os.path.basename(path) if path else "(sin audio)")
-
-    _update_audio_labels()
-    _refresh_audio_name()
-
-    def _on_parts_change(*_):
-        _update_audio_labels()
-
-    audio_parts_var.trace_add("write", _on_parts_change)
-
-    row_parts = ctk.CTkFrame(audio_card, fg_color="transparent")
-    row_parts.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 4))
-    row_parts.grid_columnconfigure(1, weight=1)
-
-    lbl_partes = ctk.CTkLabel(row_parts, text="Partes", font=ctk.CTkFont(size=12))
-    lbl_partes.grid(row=0, column=0, sticky="w")
-    entry_partes = ctk.CTkEntry(row_parts, width=80, textvariable=audio_parts_var)
-    entry_partes.grid(row=0, column=1, sticky="w", padx=(6, 0))
-
-    row_duracion = ctk.CTkFrame(audio_card, fg_color="transparent")
-    row_duracion.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 4))
-    row_duracion.grid_columnconfigure(1, weight=1)
-
-    lbl_total = ctk.CTkLabel(row_duracion, text="Duracion total", font=ctk.CTkFont(size=11))
-    lbl_total.grid(row=0, column=0, sticky="w")
-    lbl_total_val = ctk.CTkLabel(row_duracion, textvariable=audio_duracion_var, font=ctk.CTkFont(size=11))
-    lbl_total_val.grid(row=0, column=1, sticky="e")
-
-    lbl_parte = ctk.CTkLabel(row_duracion, text="Duracion por parte", font=ctk.CTkFont(size=11))
-    lbl_parte.grid(row=1, column=0, sticky="w")
-    lbl_parte_val = ctk.CTkLabel(row_duracion, textvariable=audio_por_parte_var, font=ctk.CTkFont(size=11))
-    lbl_parte_val.grid(row=1, column=1, sticky="e")
-
-    btn_audio_split = ctk.CTkButton(
-        audio_card,
-        text="Picar audio",
-        command=_split_audio_en_partes,
-        height=34,
-    )
-    btn_audio_split.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=(4, 10))
-
     procesar_todo_var = ctk.BooleanVar(value=False)
     chk_procesar_todo = ctk.CTkCheckBox(
         actions,
         text="Procesar todo (corte + SRT + subtitulado)",
         variable=procesar_todo_var,
     )
-    chk_procesar_todo.grid(row=4, column=0, sticky="w", padx=14, pady=(0, 8))
+    chk_procesar_todo.grid(row=3, column=0, sticky="w", padx=14, pady=(0, 8))
 
     srt_row = ctk.CTkFrame(actions, fg_color="transparent")
-    srt_row.grid(row=5, column=0, sticky="ew", padx=14, pady=(0, 8))
+    srt_row.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 8))
     srt_row.grid_columnconfigure(1, weight=1)
 
     auto_subs_var = tk.BooleanVar(value=True)
     auto_frame = ctk.CTkFrame(actions, fg_color="transparent")
-    auto_frame.grid(row=6, column=0, sticky="ew", padx=14, pady=(0, 8))
+    auto_frame.grid(row=5, column=0, sticky="ew", padx=14, pady=(0, 8))
     auto_frame.grid_columnconfigure(1, weight=1)
     lbl_auto = ctk.CTkLabel(
         auto_frame,
@@ -1570,7 +1413,7 @@ def create_tab(parent, context):
         os.startfile(base)
 
     btn_abrir_videos = ctk.CTkButton(actions, text="Abrir Carpeta de Videos", command=abrir_carpeta_base, height=40)
-    btn_abrir_videos.grid(row=7, column=0, sticky="ew", padx=14, pady=(0, 12))
+    btn_abrir_videos.grid(row=6, column=0, sticky="ew", padx=14, pady=(0, 12))
 
     # --- Corte: preview ---
     preview_card = ctk.CTkFrame(corte_scroll, corner_radius=12)

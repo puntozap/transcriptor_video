@@ -224,6 +224,18 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
     if len(video_paths) != 2:
         raise ValueError("concat_videos_reencode soporta exactamente 2 videos.")
     v0, v1 = video_paths
+    try:
+        target_w, target_h = obtener_tamano_video(v0)
+    except Exception:
+        target_w, target_h = (1920, 1080)
+    try:
+        target_fps = obtener_fps(v0)
+    except Exception:
+        target_fps = 30.0
+    target_fps = max(12.0, min(float(target_fps), 120.0))
+    scale_filter = f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease"
+    pad_filter = f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2"
+    vf_filter = f"{scale_filter},{pad_filter},setsar=1"
     if log_fn:
         log_fn("🔗 Concatenando con re-encode (compatibilidad audio)...")
     temp_dir = os.path.join(tempfile.gettempdir(), f"concat_fix_{uuid.uuid4().hex}")
@@ -238,6 +250,9 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
                 cmd_fix = [
                     "ffmpeg", "-y",
                     "-i", src,
+                    "-vf", vf_filter,
+                    "-r", f"{target_fps:.3f}",
+                    "-pix_fmt", "yuv420p",
                     "-c:v", "libx264",
                     "-c:a", "aac",
                     "-ar", "48000",
@@ -253,6 +268,9 @@ def concat_videos_reencode(video_paths: list[str], output_path: str, log_fn=None
                     "-t", f"{max(0.1, dur):.3f}",
                     "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
                     "-shortest",
+                    "-vf", vf_filter,
+                    "-r", f"{target_fps:.3f}",
+                    "-pix_fmt", "yuv420p",
                     "-c:v", "libx264",
                     "-c:a", "aac",
                     "-ar", "48000",

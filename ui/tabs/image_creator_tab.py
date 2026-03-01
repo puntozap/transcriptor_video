@@ -167,6 +167,12 @@ def _build_creator(parent, settings, size, variant, log):
     entry_title_color = None
     entry_name_color = None
     entry_filter = None
+    entry_rect_color_1 = None
+    entry_rect_color_2 = None
+    entry_rect_opacity = None
+    rect_enabled_var = None
+    rect_gradient_var = None
+    transparent_bg_var = None
 
     def _clear_children(frame):
         for child in frame.winfo_children():
@@ -205,6 +211,9 @@ def _build_creator(parent, settings, size, variant, log):
             entry_title_color,
             entry_name_color,
             entry_filter,
+            entry_rect_color_1,
+            entry_rect_color_2,
+            entry_rect_opacity,
         ]):
             return
         settings["top_text"] = entry_top_text.get("1.0", "end").strip()
@@ -217,10 +226,21 @@ def _build_creator(parent, settings, size, variant, log):
         settings["top2_bg_color"] = entry_top2_bg.get().strip()
         settings["title_color"] = entry_title_color.get().strip()
         settings["name_color"] = entry_name_color.get().strip()
+        settings["rect_color_1"] = entry_rect_color_1.get().strip()
+        settings["rect_color_2"] = entry_rect_color_2.get().strip()
+        settings["rect_enabled"] = bool(rect_enabled_var.get()) if rect_enabled_var else False
+        settings["rect_gradient"] = rect_gradient_var.get() if rect_gradient_var else "vertical"
+        settings["transparent_bg"] = bool(transparent_bg_var.get()) if transparent_bg_var else False
         try:
             value = float(entry_filter.get().strip())
             value = max(0.0, min(1.0, value))
             settings["bg_filter_intensity"] = value
+        except Exception:
+            pass
+        try:
+            value = float(entry_rect_opacity.get().strip())
+            value = max(0.0, min(1.0, value))
+            settings["rect_opacity"] = value
         except Exception:
             pass
 
@@ -318,9 +338,20 @@ def _build_creator(parent, settings, size, variant, log):
     ctk.CTkButton(bg_row, text="Seleccionar", width=120, command=_select_bg).grid(row=0, column=0)
     lbl_bg.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
+    # Fondo transparente
+    transparent_bg_var = tk.BooleanVar(value=bool(settings.get("transparent_bg", False)))
+    chk_transparent = ctk.CTkCheckBox(options, text="Fondo transparente (PNG)", variable=transparent_bg_var)
+    chk_transparent.grid(row=4, column=0, sticky="w", padx=12, pady=(0, 8))
+
+    def _toggle_transparent():
+        settings["transparent_bg"] = bool(transparent_bg_var.get())
+        _trigger_preview()
+
+    chk_transparent.configure(command=_toggle_transparent)
+
     # Filtro fondo
     filter_row = ctk.CTkFrame(options, fg_color="transparent")
-    filter_row.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 8))
+    filter_row.grid(row=5, column=0, sticky="ew", padx=12, pady=(0, 8))
     filter_row.grid_columnconfigure(1, weight=1)
     ctk.CTkLabel(filter_row, text="Filtro fondo", font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w")
     filter_var = tk.StringVar(value=settings.get("bg_filter", "none"))
@@ -333,7 +364,7 @@ def _build_creator(parent, settings, size, variant, log):
     filter_var.trace_add("write", lambda *_: _sync_filter())
 
     row_filter = ctk.CTkFrame(options, fg_color="transparent")
-    row_filter.grid(row=5, column=0, sticky="ew", padx=12, pady=(0, 8))
+    row_filter.grid(row=6, column=0, sticky="ew", padx=12, pady=(0, 8))
     row_filter.grid_columnconfigure(1, weight=1)
     ctk.CTkLabel(row_filter, text="Intensidad", font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w")
     slider_filter = ctk.CTkSlider(row_filter, from_=0.0, to=1.0, number_of_steps=20)
@@ -366,11 +397,111 @@ def _build_creator(parent, settings, size, variant, log):
     entry_filter.bind("<Return>", _sync_filter_entry)
 
     # Imagen principal
+    # Rectangulo de fondo
+    ctk.CTkLabel(options, text="Rectangulo de fondo", font=ctk.CTkFont(size=13, weight="bold")).grid(
+        row=7, column=0, sticky="w", padx=12, pady=(6, 6)
+    )
+    rect_row = ctk.CTkFrame(options, fg_color="transparent")
+    rect_row.grid(row=8, column=0, sticky="ew", padx=12, pady=(0, 6))
+    rect_row.grid_columnconfigure(1, weight=1)
+
+    rect_enabled_var = tk.BooleanVar(value=bool(settings.get("rect_enabled", True)))
+    chk_rect = ctk.CTkCheckBox(rect_row, text="Aplicar rectangulo", variable=rect_enabled_var)
+    chk_rect.grid(row=0, column=0, sticky="w")
+
+    def _toggle_rect():
+        settings["rect_enabled"] = bool(rect_enabled_var.get())
+        _trigger_preview()
+
+    chk_rect.configure(command=_toggle_rect)
+
+    rect_gradient_var = tk.StringVar(value=settings.get("rect_gradient", "vertical"))
+    rect_grad_menu = ctk.CTkOptionMenu(
+        rect_row,
+        values=["vertical", "horizontal", "diagonal", "solid"],
+        variable=rect_gradient_var,
+        width=140,
+    )
+    rect_grad_menu.grid(row=0, column=1, sticky="e")
+
+    def _sync_rect_gradient(*_):
+        settings["rect_gradient"] = rect_gradient_var.get()
+        _trigger_preview()
+
+    rect_gradient_var.trace_add("write", lambda *_: _sync_rect_gradient())
+
+    rect_color_row = ctk.CTkFrame(options, fg_color="transparent")
+    rect_color_row.grid(row=9, column=0, sticky="ew", padx=12, pady=(0, 6))
+    rect_color_row.grid_columnconfigure(1, weight=1)
+    rect_color_row.grid_columnconfigure(3, weight=1)
+
+    ctk.CTkLabel(rect_color_row, text="Color 1", font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w")
+    entry_rect_color_1 = ctk.CTkEntry(rect_color_row, width=110)
+    entry_rect_color_1.insert(0, settings.get("rect_color_1", "#3B2F2F"))
+    entry_rect_color_1.grid(row=0, column=1, sticky="w", padx=(6, 12))
+
+    def _pick_rect_color_1():
+        color = colorchooser.askcolor(title="Color 1")[1]
+        if color:
+            entry_rect_color_1.delete(0, "end")
+            entry_rect_color_1.insert(0, color)
+            _trigger_preview()
+
+    ctk.CTkButton(rect_color_row, text="Elegir", width=70, command=_pick_rect_color_1).grid(row=0, column=2)
+
+    ctk.CTkLabel(rect_color_row, text="Color 2", font=ctk.CTkFont(size=11)).grid(row=1, column=0, sticky="w", pady=(6, 0))
+    entry_rect_color_2 = ctk.CTkEntry(rect_color_row, width=110)
+    entry_rect_color_2.insert(0, settings.get("rect_color_2", "#A67C52"))
+    entry_rect_color_2.grid(row=1, column=1, sticky="w", padx=(6, 12), pady=(6, 0))
+
+    def _pick_rect_color_2():
+        color = colorchooser.askcolor(title="Color 2")[1]
+        if color:
+            entry_rect_color_2.delete(0, "end")
+            entry_rect_color_2.insert(0, color)
+            _trigger_preview()
+
+    ctk.CTkButton(rect_color_row, text="Elegir", width=70, command=_pick_rect_color_2).grid(row=1, column=2, pady=(6, 0))
+
+    rect_opacity_row = ctk.CTkFrame(options, fg_color="transparent")
+    rect_opacity_row.grid(row=10, column=0, sticky="ew", padx=12, pady=(0, 8))
+    rect_opacity_row.grid_columnconfigure(1, weight=1)
+    ctk.CTkLabel(rect_opacity_row, text="Opacidad", font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w")
+    slider_rect_opacity = ctk.CTkSlider(rect_opacity_row, from_=0.0, to=1.0, number_of_steps=20)
+    slider_rect_opacity.grid(row=0, column=1, sticky="ew", padx=(8, 6))
+    entry_rect_opacity = ctk.CTkEntry(rect_opacity_row, width=70)
+    entry_rect_opacity.grid(row=0, column=2)
+    slider_rect_opacity.set(float(settings.get("rect_opacity", 1.0)))
+    entry_rect_opacity.insert(0, f"{settings.get('rect_opacity', 1.0):.2f}")
+
+    def _sync_rect_opacity_slider(val):
+        try:
+            settings["rect_opacity"] = float(val)
+            entry_rect_opacity.delete(0, "end")
+            entry_rect_opacity.insert(0, f"{float(val):.2f}")
+        except Exception:
+            pass
+
+    def _sync_rect_opacity_entry(_=None):
+        try:
+            value = float(entry_rect_opacity.get().strip())
+            value = max(0.0, min(1.0, value))
+            settings["rect_opacity"] = value
+            slider_rect_opacity.set(value)
+            _trigger_preview()
+        except Exception:
+            pass
+
+    slider_rect_opacity.configure(command=_sync_rect_opacity_slider)
+    slider_rect_opacity.bind("<ButtonRelease-1>", lambda _e: _trigger_preview())
+    entry_rect_opacity.bind("<FocusOut>", _sync_rect_opacity_entry)
+    entry_rect_opacity.bind("<Return>", _sync_rect_opacity_entry)
+
     ctk.CTkLabel(options, text="Imagen principal (PNG)", font=ctk.CTkFont(size=13, weight="bold")).grid(
-        row=6, column=0, sticky="w", padx=12, pady=(4, 6)
+        row=11, column=0, sticky="w", padx=12, pady=(4, 6)
     )
     main_row = ctk.CTkFrame(options, fg_color="transparent")
-    main_row.grid(row=7, column=0, sticky="ew", padx=12, pady=(0, 8))
+    main_row.grid(row=12, column=0, sticky="ew", padx=12, pady=(0, 8))
     main_row.grid_columnconfigure(1, weight=1)
     lbl_main = ctk.CTkLabel(main_row, text=os.path.basename(settings.get("main_path", "")) or "(sin imagen)")
 
@@ -385,7 +516,7 @@ def _build_creator(parent, settings, size, variant, log):
     lbl_main.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
     chk_main = ctk.CTkCheckBox(options, text="Mostrar imagen principal")
-    chk_main.grid(row=8, column=0, sticky="w", padx=12)
+    chk_main.grid(row=13, column=0, sticky="w", padx=12)
     chk_main.select() if settings.get("main_enabled", True) else chk_main.deselect()
 
     def _toggle_main():

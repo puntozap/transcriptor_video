@@ -126,7 +126,7 @@ def _add_files_via_tunnel(files: list[str], log) -> list[str]:
         except Exception as e:
             log(f"IG: No se pudo copiar archivo a tunnel: {e}")
             return []
-        filename = os.path.basename(dest).replace(" ", "%20")
+        filename = urllib.parse.quote(os.path.basename(dest))
         urls.append(f"{public}/{filename}")
     return urls
 
