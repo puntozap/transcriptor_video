@@ -85,9 +85,33 @@ def _descargar_youtube(
             raise DownloadError("Stop requested")
         with yt_dlp.YoutubeDL(opciones) as ydl:
             info = ydl.extract_info(url, download=True)
-            return ydl.prepare_filename(info)
+            out_path = ydl.prepare_filename(info)
+            try:
+                if not out_path or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+                    raise DownloadError("The downloaded file is empty")
+            except DownloadError:
+                raise
+            except Exception:
+                pass
+            return out_path
     except DownloadError as e:
         msg = str(e)
+        if ("downloaded file is empty" in msg.lower() or "file is empty" in msg.lower()) and retry_update:
+            if log_fn:
+                log_fn("Archivo descargado vacio. Actualizando yt-dlp y reintentando...")
+            _actualizar_yt_dlp(log_fn=log_fn)
+            return _descargar_youtube(
+                url,
+                opciones,
+                output_dir=output_dir,
+                retry_update=False,
+                retry_android=retry_android,
+                retry_no_cookies=retry_no_cookies,
+                retry_best=retry_best,
+                player_client=player_client,
+                cookies_from_browser=cookies_from_browser,
+                log_fn=log_fn
+            )
         if retry_no_cookies and cookies_from_browser and ("DPAPI" in msg or "Failed to decrypt" in msg):
             if log_fn:
                 log_fn("Error de cookies del navegador. Reintentando sin cookies...")
@@ -110,7 +134,7 @@ def _descargar_youtube(
             if log_fn:
                 log_fn("Formato no disponible. Reintentando con 'best'...")
             opciones_retry = dict(opciones)
-            opciones_retry["format"] = "best"
+            opciones_retry["format"] = "bestvideo*+bestaudio/best"
             return _descargar_youtube(
                 url,
                 opciones_retry,
@@ -219,6 +243,7 @@ def descargar_audio_youtube(
     Descarga el audio de un video de YouTube en formato MP3.
     Devuelve la ruta al archivo descargado.
     """
+    _actualizar_yt_dlp(log_fn=log_fn)
     os.makedirs(output_dir, exist_ok=True)
 
     # Plantilla de salida (sin espacios raros en el nombre del archivo)
@@ -272,14 +297,18 @@ def descargar_video_youtube_mp4(
     Descarga un video de YouTube en MP4.
     Devuelve la ruta al archivo descargado.
     """
+    _actualizar_yt_dlp(log_fn=log_fn)
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "%(title).20s", "%(title).20s.%(ext)s")
 
     opciones = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "bestvideo*+bestaudio/best",
         "merge_output_format": "mp4",
         "outtmpl": output_path,
         "noplaylist": True,
+        "postprocessors": [
+            {"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}
+        ],
     }
 
     archivo_salida = _descargar_youtube(

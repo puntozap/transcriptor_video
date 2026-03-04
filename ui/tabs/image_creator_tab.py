@@ -18,11 +18,17 @@ def _get_font_files():
     fonts_dir = os.path.join(os.environ.get("WINDIR", r"C:\\Windows"), "Fonts")
     if not os.path.isdir(fonts_dir):
         return []
+    allowed = {
+        "phagspa.ttf",
+        "phagspab.ttf",
+        "hatten.ttf",
+    }
     files = []
     for name in os.listdir(fonts_dir):
         lower = name.lower()
         if lower.endswith(".ttf") or lower.endswith(".otf"):
-            files.append(os.path.join(fonts_dir, name))
+            if lower in allowed:
+                files.append(os.path.join(fonts_dir, name))
     return sorted(files)
 
 
@@ -512,7 +518,7 @@ def _build_creator(parent, settings, size, variant, log):
             settings["main_path"] = path
             lbl_main.configure(text=os.path.basename(path))
             
-    ctk.CTkButton(main_row, text="Seleccionar", width=120, command=_select_main).grid(row=0, column=0)
+    ctk.CTkButton(main_row, text="Agregar imagen principal", width=180, command=_select_main).grid(row=0, column=0)
     lbl_main.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
     chk_main = ctk.CTkCheckBox(options, text="Mostrar imagen principal")
@@ -559,7 +565,7 @@ def _build_creator(parent, settings, size, variant, log):
         slider.bind("<ButtonRelease-1>", lambda _e: _trigger_preview())
         return row + 1
 
-    row = 9
+    row = 14
     row = _add_slider(row, "Pos X (%)", "main_x_pct", 0.0, 1.0, 0.01)
     row = _add_slider(row, "Pos Y (%)", "main_y_pct", 0.0, 1.0, 0.01)
     row = _add_slider(row, "Escala", "main_scale", 0.5, 2.0, 0.01)
