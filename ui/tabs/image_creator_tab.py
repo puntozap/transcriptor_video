@@ -17,7 +17,7 @@ from ui.shared import helpers
 def _get_font_files():
     fonts_dir = os.path.join(os.environ.get("WINDIR", r"C:\\Windows"), "Fonts")
     if not os.path.isdir(fonts_dir):
-        return []
+        return ["arial.ttf"]
     allowed = {
         "phagspa.ttf",
         "phagspab.ttf",
@@ -29,7 +29,7 @@ def _get_font_files():
         if lower.endswith(".ttf") or lower.endswith(".otf"):
             if lower in allowed:
                 files.append(os.path.join(fonts_dir, name))
-    return sorted(files)
+    return sorted(files) or ["arial.ttf"]
 
 
 PRESETS = [

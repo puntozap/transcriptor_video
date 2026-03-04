@@ -12313,3 +12313,6 @@ C:\laragon\www\transcriptor_video\venv\Lib\site-packages\customtkinter\windows\w
   warnings.warn(f"{type(self).__name__} Warning: Given image is not CTkImage but {type(image)}. Image can not be scaled on HighDPI displays, use CTkImage instead.\n")
 mar 03/03/2026 21:23:19,68 Finalizo con codigo 0 
 mar 03/03/2026 21:42:39,75 Iniciando... 
+C:\laragon\www\transcriptor_video\venv\Lib\site-packages\customtkinter\windows\widgets\core_widget_classes\ctk_base_class.py:179: UserWarning: CTkLabel Warning: Given image is not CTkImage but <class 'PIL.ImageTk.PhotoImage'>. Image can not be scaled on HighDPI displays, use CTkImage instead.
+
+  warnings.warn(f"{type(self).__name__} Warning: Given image is not CTkImage but {type(image)}. Image can not be scaled on HighDPI displays, use CTkImage instead.\n")
